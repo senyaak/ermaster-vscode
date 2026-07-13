@@ -1,0 +1,90 @@
+{
+  "name": "erdesigner",
+  "displayName": "ER Designer",
+  "description": "ER diagram editor with DDL generation — a modern ERMaster replacement",
+  "version": "0.0.1",
+  "publisher": "senyaak",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "er",
+    "erd",
+    "ermaster",
+    "database",
+    "diagram",
+    "ddl",
+    "sql"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/senyaak/ermaster-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/senyaak/ermaster-vscode/issues"
+  },
+  "homepage": "https://github.com/senyaak/ermaster-vscode#readme",
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "erdesigner.erdEditor",
+        "displayName": "ER Diagram (ERMaster)",
+        "selector": [
+          {
+            "filenamePattern": "*.erm"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "erdesigner.newDiagram",
+        "title": "ERD: New Diagram"
+      },
+      {
+        "command": "erdesigner.generateDdl",
+        "title": "ERD: Generate DDL"
+      },
+      {
+        "command": "erdesigner.importDdl",
+        "title": "ERD: Import DDL (.sql) as Diagram"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "erdesigner.generateDdl",
+          "when": "resourceExtname == .erm",
+          "group": "erdesigner"
+        },
+        {
+          "command": "erdesigner.importDdl",
+          "when": "resourceExtname == .sql",
+          "group": "erdesigner"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "vscode:prepublish": "node esbuild.js --production"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.10"
+  }
+}
