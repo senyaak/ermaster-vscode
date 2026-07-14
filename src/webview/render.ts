@@ -41,11 +41,15 @@ export function sceneMarkup(mode: ViewMode): string {
       parts.push(noteSvg(node, i));
     }
   });
+  // relations: index matches ops.allRelations() so the webview can map a
+  // clicked line back to its relation
+  let relIndex = 0;
   for (const node of app.doc.contents) {
     if (node.kind === 'table' || node.kind === 'view') {
       for (const conn of node.base.incomings) {
         if (conn.kind === 'relation') {
-          parts.push(relationSvg(conn, node, mode));
+          parts.push(relationSvg(conn, node, mode, relIndex));
+          relIndex++;
         }
       }
     }
@@ -186,7 +190,7 @@ function categorySvg(cat: ErmCategory, mode: ViewMode): string {
  * edges of the two boxes; existing bendpoints are drawn as an orthogonal path.
  * Identifying relations (FK is part of the child PK) are solid, others dashed.
  */
-function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode): string {
+function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode, index: number): string {
   const parent = rel.source;
   if (!parent || (parent.kind !== 'table' && parent.kind !== 'view')) {
     return '';
@@ -217,16 +221,25 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
   const barGap = 9;
   const barX = px + parentDir * barGap;
 
-  // path body: from crow base, through bendpoints (if any), to the parent bar
-  let d = `M ${startX} ${cy}`;
-  for (const bp of rel.bendpoints) {
+  // polyline vertices: crow base → bendpoints → parent bar. Bendpoint handles
+  // and segment "add" handles are drawn from these when the relation is selected.
+  // bpIndex maps a vertex back to its rel.bendpoints slot (-1 for endpoints).
+  const verts: { x: number; y: number; bpIndex: number }[] = [{ x: startX, y: cy, bpIndex: -1 }];
+  rel.bendpoints.forEach((bp, i) => {
     const bx = parseInt(bp.x, 10);
     const by = parseInt(bp.y, 10);
     if (!isNaN(bx) && !isNaN(by) && bp.relative !== 'true') {
-      d += ` L ${bx} ${by}`;
+      verts.push({ x: bx, y: by, bpIndex: i });
     }
+  });
+  verts.push({ x: barX, y: py, bpIndex: -1 });
+
+  // path body: from crow base, through bendpoints (if any), to the parent bar
+  let d = `M ${verts[0].x} ${verts[0].y}`;
+  for (let i = 1; i < verts.length; i++) {
+    d += ` L ${verts[i].x} ${verts[i].y}`;
   }
-  d += ` L ${barX} ${py} L ${px} ${py}`;
+  d += ` L ${px} ${py}`;
 
   // crow's foot at the child (many) side
   const many = rel.childCardinality !== '1';
@@ -240,12 +253,34 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
     ? `<circle class="rel-end" cx="${px + parentDir * (barGap + 5)}" cy="${py}" r="4"/>`
     : '';
 
+  const selected = app.selectedRelation === rel;
+  // handles are drawn inside the zoom group, so counter-scale to keep them
+  // a roughly constant on-screen size
+  const r = 5 / app.view.scale;
+  let handles = '';
+  if (selected) {
+    // existing bendpoints: draggable / double-click to remove
+    for (const v of verts) {
+      if (v.bpIndex >= 0) {
+        handles += `<circle class="bp-handle" data-rel="${index}" data-bp="${v.bpIndex}" cx="${v.x}" cy="${v.y}" r="${r}"/>`;
+      }
+    }
+    // segment midpoints: click to insert a new bendpoint (insertion index = segment index)
+    for (let i = 0; i < verts.length - 1; i++) {
+      const mx = (verts[i].x + verts[i + 1].x) / 2;
+      const my = (verts[i].y + verts[i + 1].y) / 2;
+      handles += `<circle class="bp-add" data-rel="${index}" data-addbp="${i}" cx="${mx}" cy="${my}" r="${r * 0.8}"/>`;
+    }
+  }
+
   return (
-    `<g class="relation">` +
+    `<g class="relation${selected ? ' selected' : ''}">` +
+    `<path class="rel-hit" data-rel="${index}" d="${d}"/>` +
     `<path class="rel-line${identifying ? '' : ' non-identifying'}" d="${d}"/>` +
     `<path class="rel-end" d="${crow}"/>` +
     bar +
     circle +
+    handles +
     `</g>`
   );
 }

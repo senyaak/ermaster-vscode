@@ -1,10 +1,18 @@
-import { ErmColumn, ErmNode, ErmNote, ErmTable, ErmView, expandedColumns } from '../erm/model';
+import { ErmColumn, ErmColumnGroup, ErmNode, ErmNote, ErmTable, ErmView, expandedColumns } from '../erm/model';
 import {
   addCategory,
   addColumn,
+  addColumnGroup,
+  addColumnToGroup,
   addComplexUniqueKey,
   addIndex,
+  addViewColumn,
   deleteCategory,
+  deleteColumnGroup,
+  deleteViewColumn,
+  removeColumnFromGroup,
+  tableHasGroup,
+  toggleTableGroup,
   toggleCategoryNode,
   columnLogicalName,
   columnName,
@@ -106,6 +114,7 @@ function renderDialog(): void {
     tabs = tabBar([
       ['attrs', 'Attributes'],
       ['columns', 'Columns'],
+      ['groups', 'Groups'],
       ['indexes', 'Indexes'],
       ['unique', 'Unique Keys'],
       ['relations', 'Relations'],
@@ -180,6 +189,8 @@ function tableTabBody(t: ErmTable): string {
   switch (current!.tab) {
     case 'columns':
       return columnsGrid(t);
+    case 'groups':
+      return groupsGrid(t);
     case 'indexes':
       return indexesGrid(t);
     case 'unique':
@@ -189,6 +200,53 @@ function tableTabBody(t: ErmTable): string {
     default:
       return attrsBody(t);
   }
+}
+
+const TYPE_DATALIST = `<datalist id="type-list">${KNOWN_TYPE_IDS.map(
+  (ty) => `<option value="${ty.replace('(n)', '(255)').replace('(p,s)', '(10,2)')}">`,
+).join('')}</datalist>`;
+
+/**
+ * Reusable column groups (ERMaster's <column_groups>). Groups are diagram-wide;
+ * their columns are shared by every table that includes the group. The checkbox
+ * attaches / detaches the group on this table.
+ */
+function groupsGrid(t: ErmTable): string {
+  if (!app.doc) {
+    return '';
+  }
+  const groups = app.doc.columnGroups
+    .map((g, gi) => {
+      const cols = g.columns
+        .map(
+          (c, gci) => `<tr data-group="${gi}" data-gcol="${gci}">
+          <td><input type="text" data-field="g-name" value="${esc(columnName(c))}"></td>
+          <td><input type="text" data-field="g-type" value="${esc(formatType(c))}" list="type-list"></td>
+          <td class="center"><input type="checkbox" data-field="g-nn"${c.notNull === 'true' ? ' checked' : ''}></td>
+          <td class="center"><button class="icon-btn" data-action="group-col-del" title="Remove column">✕</button></td>
+        </tr>`,
+        )
+        .join('');
+      return `<div class="col-row">
+        <div class="col-row-main">
+          <label class="grp-attach"><input type="checkbox" data-group="${gi}" data-field="group-attach"${
+            tableHasGroup(t, g) ? ' checked' : ''
+          }> in this table</label>
+          <input type="text" data-group="${gi}" data-field="group-name" value="${esc(g.groupName)}" placeholder="group name">
+          <button class="icon-btn" data-action="group-del" data-group="${gi}" title="Delete group">✕</button>
+        </div>
+        <table class="grid">
+          <thead><tr><th>Physical</th><th>Type</th><th>NN</th><th></th></tr></thead>
+          <tbody>${cols || '<tr><td colspan="4" class="hint-row">No columns.</td></tr>'}</tbody>
+        </table>
+        <div class="grid-toolbar"><button data-action="group-add-col" data-group="${gi}">+ Column</button></div>
+      </div>`;
+    })
+    .join('');
+  return `
+    <div class="grid-toolbar"><button data-action="add-group">+ Group</button></div>
+    ${groups || '<div class="hint-row">No column groups yet. A group is a reusable set of columns you can add to several tables at once.</div>'}
+    ${TYPE_DATALIST}`;
 }
 
 function attrsBody(t: ErmTable): string {
@@ -270,7 +328,7 @@ function columnsGrid(t: ErmTable): string {
     .join('');
 
   return `
-    <datalist id="type-list">${KNOWN_TYPE_IDS.map((ty) => `<option value="${ty.replace('(n)', '(255)').replace('(p,s)', '(10,2)')}">`).join('')}</datalist>
+    ${TYPE_DATALIST}
     <div class="grid-toolbar"><button data-action="add-col">+ Column</button></div>
     <table class="grid">
       <thead><tr>
@@ -364,14 +422,32 @@ function relationsGrid(t: ErmTable): string {
 }
 
 function viewBody(v: ErmView): string {
-  const cols = expandedColumns(v)
-    .map((c) => `<div class="view-col">${esc(columnName(c))} <span class="col-type">${esc(formatType(c))}</span></div>`)
+  const ownColumns = v.columns
+    .filter((i): i is { kind: 'column'; column: ErmColumn } => i.kind === 'column')
+    .map((i) => i.column);
+  const rows = expandedColumns(v)
+    .map((c) => {
+      const own = ownColumns.includes(c);
+      const dis = own ? '' : ' disabled';
+      return `<tr data-vcol="${ownColumns.indexOf(c)}">
+        <td><input type="text" data-field="vc-name" value="${esc(columnName(c))}"${dis}></td>
+        <td><input type="text" data-field="vc-type" value="${esc(formatType(c))}" list="type-list"${dis}></td>
+        <td class="center"><button class="icon-btn" data-action="vcol-del" title="Delete"${own ? '' : ' disabled'}>✕</button></td>
+      </tr>`;
+    })
     .join('');
   return `
     <div class="field"><label>Physical name</label><input type="text" data-field="v-physical" value="${esc(v.physicalName)}"></div>
     <div class="field"><label>Logical name</label><input type="text" data-field="v-logical" value="${esc(v.logicalName)}"></div>
-    <div class="field"><label>SQL</label><textarea rows="8" data-field="v-sql">${esc(v.sql)}</textarea></div>
-    ${cols ? `<div class="field"><label>Columns</label>${cols}</div>` : ''}`;
+    <div class="field"><label>SQL</label><textarea rows="6" data-field="v-sql">${esc(v.sql)}</textarea></div>
+    <div class="field"><label>Columns</label>
+      <div class="grid-toolbar"><button data-action="add-vcol">+ Column</button></div>
+      <table class="grid">
+        <thead><tr><th>Name</th><th>Type</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" class="hint-row">No columns.</td></tr>'}</tbody>
+      </table>
+      ${TYPE_DATALIST}
+    </div>`;
 }
 
 function noteBody(n: ErmNote): string {
@@ -449,6 +525,24 @@ function handleAction(btn: HTMLButtonElement): void {
     commit();
     return;
   }
+
+  // view column editing
+  if (node.kind === 'view') {
+    if (action === 'add-vcol') {
+      addViewColumn(node, `COLUMN_${expandedColumns(node).length + 1}`, 'varchar(255)');
+      commit();
+    } else if (action === 'vcol-del') {
+      const vtr = btn.closest('tr') as HTMLElement | null;
+      const own = node.columns.filter((i) => i.kind === 'column');
+      const item = own[parseInt(vtr?.dataset.vcol ?? '-1', 10)];
+      if (item && item.kind === 'column') {
+        deleteViewColumn(node, item.column);
+        commit();
+      }
+    }
+    return;
+  }
+
   if (node.kind !== 'table') {
     return;
   }
@@ -470,8 +564,37 @@ function handleAction(btn: HTMLButtonElement): void {
     return;
   }
 
+  // column groups (diagram-wide)
+  if (action === 'add-group') {
+    const group = addColumnGroup(app.doc, `GROUP_${app.doc.columnGroups.length + 1}`);
+    toggleTableGroup(t, group); // attach the new group to the current table by default
+    commit();
+    return;
+  }
+  if (action === 'group-add-col' || action === 'group-del') {
+    const group = app.doc.columnGroups[parseInt(btn.dataset.group ?? '-1', 10)];
+    if (group) {
+      if (action === 'group-add-col') {
+        addColumnToGroup(group, `COLUMN_${group.columns.length + 1}`, 'varchar(255)');
+      } else {
+        deleteColumnGroup(app.doc, group);
+      }
+      commit();
+    }
+    return;
+  }
+
   const tr = btn.closest('tr') as HTMLElement | null;
   if (!tr) {
+    return;
+  }
+  if (action === 'group-col-del') {
+    const group = app.doc.columnGroups[parseInt(tr.dataset.group ?? '-1', 10)];
+    const col = group?.columns[parseInt(tr.dataset.gcol ?? '-1', 10)];
+    if (group && col) {
+      removeColumnFromGroup(group, col);
+      commit();
+    }
     return;
   }
   if (action === 'col-del') {
@@ -544,6 +667,21 @@ function handleChange(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaEle
     return;
   }
   if (node.kind === 'view') {
+    const vtr = el.closest('tr') as HTMLElement | null;
+    if (vtr && vtr.dataset.vcol !== undefined) {
+      const own = node.columns.filter((i) => i.kind === 'column');
+      const item = own[parseInt(vtr.dataset.vcol, 10)];
+      if (item && item.kind === 'column') {
+        if (field === 'vc-name') {
+          const v = (el as HTMLInputElement).value.trim();
+          if (v) setColumnName(item.column, v);
+        } else if (field === 'vc-type') {
+          setColumnType(item.column, (el as HTMLInputElement).value.trim());
+        }
+        commit();
+      }
+      return;
+    }
     if (field === 'v-physical') {
       node.physicalName = el.value.trim();
     } else if (field === 'v-logical') {
@@ -579,6 +717,43 @@ function handleChange(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaEle
     t.base.color = hexToRgb(el.value);
     commit();
     return;
+  }
+
+  // column groups
+  if (field === 'group-attach' && el.dataset.group !== undefined) {
+    const group = app.doc.columnGroups[parseInt(el.dataset.group, 10)];
+    if (group) {
+      toggleTableGroup(t, group);
+      commit();
+    }
+    return;
+  }
+  if (field === 'group-name' && el.dataset.group !== undefined) {
+    const group = app.doc.columnGroups[parseInt(el.dataset.group, 10)];
+    if (group) {
+      group.groupName = (el as HTMLInputElement).value;
+      commit();
+    }
+    return;
+  }
+  {
+    const gtr = el.closest('tr') as HTMLElement | null;
+    if (gtr && gtr.dataset.gcol !== undefined && gtr.dataset.group !== undefined) {
+      const group = app.doc.columnGroups[parseInt(gtr.dataset.group, 10)];
+      const gcol = group?.columns[parseInt(gtr.dataset.gcol, 10)];
+      if (group && gcol) {
+        if (field === 'g-name') {
+          const v = (el as HTMLInputElement).value.trim();
+          if (v) setColumnName(gcol, v);
+        } else if (field === 'g-type') {
+          setColumnType(gcol, (el as HTMLInputElement).value.trim());
+        } else if (field === 'g-nn') {
+          gcol.notNull = (el as HTMLInputElement).checked ? 'true' : 'false';
+        }
+        commit();
+      }
+      return;
+    }
   }
 
   const columns = expandedColumns(t);

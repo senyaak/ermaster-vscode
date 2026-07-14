@@ -232,6 +232,44 @@ g.node.rel-source .tbl-body {
   fill: var(--vscode-editor-background);
 }
 
+/* wide transparent path to make the thin relation line easy to click */
+.rel-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 10;
+  cursor: pointer;
+}
+
+g.relation.selected .rel-line {
+  stroke: var(--vscode-focusBorder, #4a9eff);
+  stroke-width: 2;
+}
+
+g.relation.selected .rel-end {
+  stroke: var(--vscode-focusBorder, #4a9eff);
+}
+
+/* draggable bendpoint handles */
+.bp-handle {
+  fill: var(--vscode-focusBorder, #4a9eff);
+  stroke: var(--vscode-editor-background, #fff);
+  stroke-width: 1;
+  cursor: move;
+}
+
+/* segment midpoint "add bendpoint" handles */
+.bp-add {
+  fill: var(--vscode-editor-background, #fff);
+  stroke: var(--vscode-focusBorder, #4a9eff);
+  stroke-width: 1;
+  opacity: 0.55;
+  cursor: crosshair;
+}
+
+.bp-add:hover {
+  opacity: 1;
+}
+
 /* ---- notes ---- */
 
 .note-body {
@@ -476,6 +514,32 @@ g.category {
   display: flex;
   gap: 6px;
   margin-bottom: 8px;
+}
+
+.col-row {
+  border: 1px solid var(--vscode-panel-border, #3c3c3c);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.col-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.col-row-main input[type="text"] {
+  flex: 1;
+}
+
+.grp-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .grid-toolbar button {

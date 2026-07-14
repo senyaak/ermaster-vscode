@@ -1,5 +1,18 @@
-import { ErmNode } from '../erm/model';
-import { addNote, addTable, createRelationAutoFk, deleteNode, setViewMode, DATABASE_IDS, ViewMode } from '../erm/ops';
+import { ErmNode, ErmRelation } from '../erm/model';
+import {
+  addBendpoint,
+  addNote,
+  addTable,
+  allRelations,
+  createRelationAutoFk,
+  deleteNode,
+  moveBendpoint,
+  removeBendpoint,
+  removeRelation,
+  setViewMode,
+  DATABASE_IDS,
+  ViewMode,
+} from '../erm/ops';
 import { app, commit, notify, onChange, post, ready, selectedNode, setDocFromText, Tool } from './state';
 import { buildExportSvg, renderDiagram, showHint, svgEl } from './render';
 import { closeDialog, isDialogOpen, openCategoriesDialog, openDialogFor, refreshDialog } from './dialogs';
@@ -69,6 +82,7 @@ function nodeIndexAt(target: EventTarget | null): number {
 function setTool(tool: Tool): void {
   app.tool = tool;
   app.relationSource = -1;
+  app.selectedRelation = null;
   document.body.classList.toggle('tool-active', tool !== 'select');
   palette.querySelectorAll('.tool-btn').forEach((b) => {
     b.classList.toggle('active', (b as HTMLElement).dataset.tool === tool);
@@ -147,17 +161,30 @@ function exportPng(): void {
 // ---------------------------------------------------------------- pointer
 
 interface DragState {
-  kind: 'node' | 'pan';
+  kind: 'node' | 'pan' | 'bendpoint';
   index: number;
   startX: number;
   startY: number;
   node?: ErmNode;
+  relation?: ErmRelation;
+  bpIndex?: number;
+  added?: boolean;
   origX: number;
   origY: number;
   moved: boolean;
 }
 
 let drag: DragState | null = null;
+
+/** Resolve the relation referenced by a clicked handle / hit-path element. */
+function relationAt(target: EventTarget | null): { rel: ErmRelation; el: Element } | null {
+  const el = (target as Element | null)?.closest?.('[data-rel]');
+  if (!el || !app.doc) {
+    return null;
+  }
+  const rel = allRelations(app.doc)[parseInt(el.getAttribute('data-rel') ?? '-1', 10)];
+  return rel ? { rel, el } : null;
+}
 
 svg.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || !app.doc) {
@@ -181,14 +208,56 @@ svg.addEventListener('pointerdown', (e) => {
   }
 
   svg.setPointerCapture(e.pointerId);
+
+  // relation editing takes priority over node/pan when a handle or line is hit
+  const target = e.target as Element;
+  const rel = relationAt(target);
+  if (rel) {
+    const p = toDiagram(e.clientX, e.clientY);
+    if (target.classList.contains('bp-handle')) {
+      const bpIndex = parseInt(target.getAttribute('data-bp') ?? '-1', 10);
+      selectRelation(rel.rel);
+      drag = { kind: 'bendpoint', index, startX: e.clientX, startY: e.clientY, relation: rel.rel, bpIndex, origX: p.x, origY: p.y, moved: false };
+      e.preventDefault();
+      return;
+    }
+    if (target.classList.contains('bp-add')) {
+      const seg = parseInt(target.getAttribute('data-addbp') ?? '0', 10);
+      addBendpoint(rel.rel, seg, p.x, p.y);
+      selectRelation(rel.rel);
+      drag = { kind: 'bendpoint', index, startX: e.clientX, startY: e.clientY, relation: rel.rel, bpIndex: seg, origX: p.x, origY: p.y, moved: false, added: true };
+      e.preventDefault();
+      return;
+    }
+    // clicked the line itself: just select the relation
+    selectRelation(rel.rel);
+    drag = { kind: 'pan', index: -1, startX: e.clientX, startY: e.clientY, origX: app.view.x, origY: app.view.y, moved: false };
+    e.preventDefault();
+    return;
+  }
+
   if (index >= 0) {
     const node = app.doc.contents[index];
+    clearRelationSelection();
     drag = { kind: 'node', index, startX: e.clientX, startY: e.clientY, node, origX: nodeX(node), origY: nodeY(node), moved: false };
   } else {
     drag = { kind: 'pan', index: -1, startX: e.clientX, startY: e.clientY, origX: app.view.x, origY: app.view.y, moved: false };
   }
   e.preventDefault();
 });
+
+function selectRelation(rel: ErmRelation): void {
+  app.selectedRelation = rel;
+  app.selectedIndex = -1;
+  renderDiagram();
+}
+
+function clearRelationSelection(): void {
+  if (app.selectedRelation) {
+    app.selectedRelation = null;
+    renderDiagram();
+  }
+}
 
 svg.addEventListener('pointermove', (e) => {
   if (!drag) {
@@ -202,7 +271,10 @@ svg.addEventListener('pointermove', (e) => {
   if (!drag.moved) {
     return;
   }
-  if (drag.kind === 'node' && drag.node) {
+  if (drag.kind === 'bendpoint' && drag.relation && drag.bpIndex !== undefined) {
+    moveBendpoint(drag.relation, drag.bpIndex, drag.origX + dx / app.view.scale, drag.origY + dy / app.view.scale);
+    renderDiagram();
+  } else if (drag.kind === 'node' && drag.node) {
     drag.node.base.x = String(Math.round(drag.origX + dx / app.view.scale));
     drag.node.base.y = String(Math.round(drag.origY + dy / app.view.scale));
     renderDiagram();
@@ -222,16 +294,24 @@ svg.addEventListener('pointerup', (e) => {
   }
   const d = drag;
   drag = null;
-  if (d.kind === 'node') {
+  if (d.kind === 'bendpoint') {
+    if (d.moved || d.added) {
+      commit();
+    }
+  } else if (d.kind === 'node') {
     if (d.moved) {
       commit();
     } else if (app.selectedIndex !== d.index) {
       app.selectedIndex = d.index;
+      clearRelationSelection();
       renderDiagram();
     }
   } else if (!d.moved && app.selectedIndex >= 0) {
     app.selectedIndex = -1;
     renderDiagram();
+  } else if (!d.moved && app.selectedRelation && !relationAt(e.target)) {
+    // clicked empty space: drop the relation selection
+    clearRelationSelection();
   }
 });
 
@@ -240,6 +320,16 @@ svg.addEventListener('pointercancel', () => {
 });
 
 svg.addEventListener('dblclick', (e) => {
+  // double-clicking a bendpoint handle removes that bendpoint
+  const target = e.target as Element;
+  if (target.classList.contains('bp-handle')) {
+    const rel = relationAt(target);
+    if (rel) {
+      removeBendpoint(rel.rel, parseInt(target.getAttribute('data-bp') ?? '-1', 10));
+      commit();
+    }
+    return;
+  }
   const index = nodeIndexAt(e.target);
   if (index >= 0 && app.doc) {
     app.selectedIndex = index;
@@ -377,6 +467,8 @@ window.addEventListener('keydown', (e) => {
       closeDialog();
     } else if (app.tool !== 'select') {
       setTool('select');
+    } else if (app.selectedRelation) {
+      clearRelationSelection();
     } else if (app.selectedIndex >= 0) {
       app.selectedIndex = -1;
       renderDiagram();
@@ -390,7 +482,12 @@ window.addEventListener('keydown', (e) => {
   if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
     return;
   }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && app.selectedIndex >= 0 && app.doc) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && app.selectedRelation && app.doc) {
+    removeRelation(app.doc, app.selectedRelation);
+    app.selectedRelation = null;
+    commit();
+    e.preventDefault();
+  } else if ((e.key === 'Delete' || e.key === 'Backspace') && app.selectedIndex >= 0 && app.doc) {
     const node = selectedNode();
     if (node) {
       deleteNode(app.doc, node);

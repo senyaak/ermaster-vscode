@@ -1,16 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { expandedColumns, isTable } from '../src/erm/model';
+import { ErmView, expandedColumns, isTable } from '../src/erm/model';
 import { loadErm } from '../src/erm/load';
 import { writeErm } from '../src/erm/write';
 import {
+  addBendpoint,
   addColumn,
+  addColumnGroup,
+  addColumnToGroup,
   addComplexUniqueKey,
   addIndex,
   addNote,
   addTable,
+  addViewColumn,
+  allRelations,
   columnName,
   createRelation,
+  createRelationAutoFk,
   deleteColumn,
+  deleteColumnGroup,
+  deleteViewColumn,
+  moveBendpoint,
+  removeBendpoint,
+  tableHasGroup,
+  toggleTableGroup,
   deleteComplexUniqueKey,
   deleteNode,
   emptyDiagram,
@@ -128,6 +140,149 @@ describe('relations', () => {
     deleteColumn(d, parent, expandedColumns(parent)[0]);
     expect(child.base.incomings).toHaveLength(0);
     expect(fk.referencedColumns).toHaveLength(0);
+  });
+});
+
+describe('bendpoints', () => {
+  function withRelation() {
+    const d = emptyDiagram();
+    const parent = addTable(d, 0, 0);
+    parent.physicalName = 'parent';
+    addColumn(parent, 'id', 'serial');
+    expandedColumns(parent)[0].primaryKey = 'true';
+    const child = addTable(d, 400, 0);
+    child.physicalName = 'child';
+    const rel = createRelationAutoFk(parent, child)!;
+    return { d, rel };
+  }
+
+  it('allRelations lists relations in render order', () => {
+    const { d, rel } = withRelation();
+    expect(allRelations(d)).toEqual([rel]);
+  });
+
+  it('add / move / remove bendpoints', () => {
+    const { rel } = withRelation();
+    addBendpoint(rel, 0, 100.4, 50.6);
+    expect(rel.bendpoints).toEqual([{ relative: 'false', x: '100', y: '51' }]);
+    addBendpoint(rel, 1, 200, 80);
+    expect(rel.bendpoints.map((b) => b.x)).toEqual(['100', '200']);
+    moveBendpoint(rel, 0, 120, 60);
+    expect(rel.bendpoints[0]).toEqual({ relative: 'false', x: '120', y: '60' });
+    removeBendpoint(rel, 0);
+    expect(rel.bendpoints).toEqual([{ relative: 'false', x: '200', y: '80' }]);
+  });
+
+  it('addBendpoint clamps the insertion index', () => {
+    const { rel } = withRelation();
+    addBendpoint(rel, 99, 10, 10);
+    addBendpoint(rel, -5, 20, 20);
+    expect(rel.bendpoints.map((b) => b.x)).toEqual(['20', '10']);
+  });
+
+  it('bendpoints survive a round-trip', () => {
+    const { d, rel } = withRelation();
+    addBendpoint(rel, 0, 150, 75);
+    const reloaded = loadErm(writeErm(d));
+    expect(allRelations(reloaded)[0].bendpoints).toEqual([
+      { relative: 'false', x: '150', y: '75' },
+    ]);
+  });
+});
+
+describe('column groups', () => {
+  // addTable seeds a default "id" PK column; clear it so tests focus on groups
+  function emptyTable(d: ReturnType<typeof emptyDiagram>, x = 0, y = 0) {
+    const t = addTable(d, x, y);
+    t.columns = [];
+    return t;
+  }
+
+  it('attach expands the group columns into the table', () => {
+    const d = emptyDiagram();
+    const t = emptyTable(d);
+    const group = addColumnGroup(d, 'audit');
+    addColumnToGroup(group, 'created_at', 'timestamp');
+    addColumnToGroup(group, 'updated_at', 'timestamp');
+    expect(tableHasGroup(t, group)).toBe(false);
+    toggleTableGroup(t, group);
+    expect(tableHasGroup(t, group)).toBe(true);
+    expect(expandedColumns(t).map(columnName)).toEqual(['created_at', 'updated_at']);
+    toggleTableGroup(t, group);
+    expect(expandedColumns(t)).toHaveLength(0);
+  });
+
+  it('a group is shared across tables', () => {
+    const d = emptyDiagram();
+    const a = emptyTable(d, 0, 0);
+    const b = emptyTable(d, 300, 0);
+    const group = addColumnGroup(d, 'audit');
+    addColumnToGroup(group, 'created_at', 'timestamp');
+    toggleTableGroup(a, group);
+    toggleTableGroup(b, group);
+    // editing the shared column shows in both tables
+    group.columns[0].word!.physicalName = 'created';
+    expect(expandedColumns(a).map(columnName)).toEqual(['created']);
+    expect(expandedColumns(b).map(columnName)).toEqual(['created']);
+  });
+
+  it('deleteColumnGroup detaches it everywhere', () => {
+    const d = emptyDiagram();
+    const t = emptyTable(d);
+    const group = addColumnGroup(d, 'audit');
+    addColumnToGroup(group, 'created_at', 'timestamp');
+    toggleTableGroup(t, group);
+    deleteColumnGroup(d, group);
+    expect(d.columnGroups).toHaveLength(0);
+    expect(tableHasGroup(t, group)).toBe(false);
+    expect(expandedColumns(t)).toHaveLength(0);
+  });
+
+  it('column groups survive a round-trip', () => {
+    const d = emptyDiagram();
+    const t = emptyTable(d);
+    t.physicalName = 'orders';
+    const group = addColumnGroup(d, 'audit');
+    addColumnToGroup(group, 'created_at', 'timestamp');
+    toggleTableGroup(t, group);
+    const reloaded = loadErm(writeErm(d));
+    expect(reloaded.columnGroups.map((g) => g.groupName)).toEqual(['audit']);
+    const rt = reloaded.contents.find(isTable)!;
+    expect(expandedColumns(rt).map(columnName)).toEqual(['created_at']);
+  });
+});
+
+describe('view columns', () => {
+  function makeView(): ErmView {
+    return {
+      kind: 'view',
+      base: { height: '-1', width: '-1', fontName: '', fontSize: '9', x: '0', y: '0', color: null, incomings: [] },
+      physicalName: 'v_users',
+      logicalName: '',
+      description: '',
+      sql: 'SELECT id, email FROM users',
+      columns: [],
+      viewProperties: null,
+    };
+  }
+
+  it('add / delete view columns', () => {
+    const v = makeView();
+    const a = addViewColumn(v, 'id', 'integer');
+    addViewColumn(v, 'email', 'varchar(255)');
+    expect(expandedColumns(v).map(columnName)).toEqual(['id', 'email']);
+    deleteViewColumn(v, a);
+    expect(expandedColumns(v).map(columnName)).toEqual(['email']);
+  });
+
+  it('view columns survive a round-trip', () => {
+    const d = emptyDiagram();
+    const v = makeView();
+    addViewColumn(v, 'id', 'integer');
+    d.contents.push(v);
+    const reloaded = loadErm(writeErm(d));
+    const rv = reloaded.contents.find((n): n is ErmView => n.kind === 'view')!;
+    expect(expandedColumns(rv).map(columnName)).toEqual(['id']);
   });
 });
 

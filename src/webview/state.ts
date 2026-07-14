@@ -1,4 +1,4 @@
-import { ErmDiagram, ErmNode } from '../erm/model';
+import { ErmDiagram, ErmNode, ErmRelation } from '../erm/model';
 import { loadErm } from '../erm/load';
 import { writeErm } from '../erm/write';
 
@@ -14,6 +14,8 @@ export interface AppState {
   tool: Tool;
   /** during relation tool: index of the picked parent table, or -1 */
   relationSource: number;
+  /** the relation whose bendpoints are being edited, or null */
+  selectedRelation: ErmRelation | null;
   view: { x: number; y: number; scale: number };
   parseError: string;
 }
@@ -23,6 +25,7 @@ export const app: AppState = {
   selectedIndex: -1,
   tool: 'select',
   relationSource: -1,
+  selectedRelation: null,
   view: { x: 40, y: 40, scale: 1 },
   parseError: '',
 };
@@ -60,6 +63,8 @@ export function setDocFromText(text: string): boolean {
   if (app.selectedIndex >= (app.doc?.contents.length ?? 0)) {
     app.selectedIndex = -1;
   }
+  // relation objects are rebuilt on load; a held reference is now stale
+  app.selectedRelation = null;
   return true;
 }
 

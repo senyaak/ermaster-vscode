@@ -1,9 +1,11 @@
 .vscode/**
 src/**
+tests/**
 node_modules/**
 examples/**
 esbuild.js
 tsconfig.json
+vitest.config.ts
 out/**/*.map
 *.vsix
 *.zip

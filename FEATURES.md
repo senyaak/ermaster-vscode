@@ -26,14 +26,14 @@ Source: `org.insightech.er` (SVN r128, SourceForge). Status: ✅ done, 🚧 part
 | Indexes (including the `<inidex>` typo) | ✅ | Indexes tab: name, UNIQUE, columns; DDL; tests |
 | Composite unique keys | ✅ | Unique Keys tab + DDL + tests |
 | Notes | ✅ | tool, text, color, drawn behind tables; tests |
-| Views | 🚧 | rendered, name and SQL editable, DDL; columns read-only |
+| Views | ✅ | name, SQL and columns editable (Columns grid in dialog); DDL; tests |
 | Table colors | ✅ | color picker in dialog |
 | Composite FK | ✅ | Relation tool copies the whole PK; tests |
 | Categories (visual grouping) | ✅ | Groups button: name, color, member tables; canvas frame; tests |
-| Column groups (`column_groups`) | 🚧 | full format support, read-only in tables |
+| Column groups (`column_groups`) | ✅ | Groups tab in the table dialog: create, edit columns, attach to tables; tests |
 | comment_connection (note↔table) | 🚧 | format only; no UI to create |
 | Images on canvas (`image`) | 🚧 | format only; not rendered |
-| Bendpoint editing | 🚧 | rendered but not draggable |
+| Bendpoint editing | ✅ | click a relation to select, drag handles, click segment to add, double-click to remove; tests |
 | Bezier relations, IDEF1X notation | 🚧 | saved; we draw IE crow's foot |
 
 ## Databases

@@ -923,6 +923,23 @@
 				<schema></schema>
 			</table_properties>
 		</table>
+		<note>
+			<id>4</id>
+			<height>100</height>
+			<width>160</width>
+				<font_name></font_name>
+				<font_size>9</font_size>
+			<x>33</x>
+			<y>32</y>
+			<color>
+				<r>255</r>
+				<g>255</g>
+				<b>206</b>
+			</color>
+			<connections>
+			</connections>
+			<text>Note</text>
+		</note>
 	</contents>
 	<column_groups>
 	</column_groups>

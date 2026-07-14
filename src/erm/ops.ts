@@ -1,6 +1,7 @@
 import {
   ErmCategory,
   ErmColumn,
+  ErmColumnGroup,
   ErmComplexUniqueKey,
   ErmDiagram,
   ErmIndex,
@@ -8,6 +9,7 @@ import {
   ErmNote,
   ErmRelation,
   ErmTable,
+  ErmView,
   ErmWord,
   expandedColumns,
 } from './model';
@@ -341,6 +343,18 @@ export function addColumn(table: ErmTable, physicalName: string, type: string): 
   return column;
 }
 
+/** Add a plain column to a view (views have no PK/FK, so this is simpler). */
+export function addViewColumn(view: ErmView, physicalName: string, type: string): ErmColumn {
+  const column = newColumn(physicalName, type);
+  view.columns.push({ kind: 'column', column });
+  return column;
+}
+
+/** Remove a column from a view. */
+export function deleteViewColumn(view: ErmView, column: ErmColumn): void {
+  view.columns = view.columns.filter((i) => i.kind !== 'column' || i.column !== column);
+}
+
 export function deleteColumn(diagram: ErmDiagram, table: ErmTable, column: ErmColumn): void {
   // drop relations that reference this column from child tables
   for (const node of diagram.contents) {
@@ -606,6 +620,103 @@ function findOwner(diagram: ErmDiagram, column: ErmColumn): ErmTable | null {
 /** The relation shown for a column in the editor (first FK relation). */
 export function columnRelation(column: ErmColumn): ErmRelation | null {
   return column.relations[0] ?? null;
+}
+
+// ------------------------------------------------------------ bendpoints
+
+/**
+ * All relations in the diagram in a stable order (contents order, then each
+ * node's incoming connections). The webview relies on this order to map a
+ * clicked line back to its relation, so it must match the render iteration.
+ */
+export function allRelations(diagram: ErmDiagram): ErmRelation[] {
+  const result: ErmRelation[] = [];
+  for (const node of diagram.contents) {
+    if (node.kind === 'table' || node.kind === 'view') {
+      for (const conn of node.base.incomings) {
+        if (conn.kind === 'relation') {
+          result.push(conn);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/** Insert an absolute bendpoint at position `index` along the relation's path. */
+export function addBendpoint(relation: ErmRelation, index: number, x: number, y: number): void {
+  const clamped = Math.max(0, Math.min(index, relation.bendpoints.length));
+  relation.bendpoints.splice(clamped, 0, {
+    relative: 'false',
+    x: String(Math.round(x)),
+    y: String(Math.round(y)),
+  });
+}
+
+/** Move an existing bendpoint to absolute coordinates. */
+export function moveBendpoint(relation: ErmRelation, index: number, x: number, y: number): void {
+  const bp = relation.bendpoints[index];
+  if (!bp) {
+    return;
+  }
+  bp.relative = 'false';
+  bp.x = String(Math.round(x));
+  bp.y = String(Math.round(y));
+}
+
+/** Remove the bendpoint at `index`. */
+export function removeBendpoint(relation: ErmRelation, index: number): void {
+  if (index >= 0 && index < relation.bendpoints.length) {
+    relation.bendpoints.splice(index, 1);
+  }
+}
+
+// ------------------------------------------------------------ column groups
+
+/** Create a new diagram-level reusable column group. */
+export function addColumnGroup(diagram: ErmDiagram, name = 'GROUP'): ErmColumnGroup {
+  const group: ErmColumnGroup = { groupName: name, columns: [] };
+  diagram.columnGroups.push(group);
+  return group;
+}
+
+/** Delete a group and detach it from every table/view that includes it. */
+export function deleteColumnGroup(diagram: ErmDiagram, group: ErmColumnGroup): void {
+  diagram.columnGroups = diagram.columnGroups.filter((g) => g !== group);
+  for (const node of diagram.contents) {
+    if (node.kind === 'table' || node.kind === 'view') {
+      node.columns = node.columns.filter((i) => i.kind !== 'group' || i.group !== group);
+    }
+  }
+}
+
+/** Add a plain column to a group (its definition is shared by every table using the group). */
+export function addColumnToGroup(group: ErmColumnGroup, physicalName: string, type: string): ErmColumn {
+  const column = newColumn(physicalName, type);
+  group.columns.push(column);
+  return column;
+}
+
+/** Remove a column from a group. */
+export function removeColumnFromGroup(group: ErmColumnGroup, column: ErmColumn): void {
+  group.columns = group.columns.filter((c) => c !== column);
+}
+
+/** Whether a table/view includes the given group. */
+export function tableHasGroup(table: ErmTable | ErmView, group: ErmColumnGroup): boolean {
+  return table.columns.some((i) => i.kind === 'group' && i.group === group);
+}
+
+/** Attach or detach a group on a table/view. */
+export function toggleTableGroup(table: ErmTable | ErmView, group: ErmColumnGroup): void {
+  if (tableHasGroup(table, group)) {
+    table.columns = table.columns.filter((i) => i.kind !== 'group' || i.group !== group);
+  } else {
+    table.columns.push({ kind: 'group', group });
+  }
+  if (table.kind === 'table') {
+    autoSize(table);
+  }
 }
 
 // ------------------------------------------------------------ SQL types
