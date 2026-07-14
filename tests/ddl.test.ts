@@ -77,6 +77,45 @@ describe('DDL MySQL', () => {
   });
 });
 
+describe('DDL Oracle', () => {
+  it('maps types to NUMBER/VARCHAR2 and uses sequences, not IDENTITY', () => {
+    const ddl = generateDdl(buildShop(), 'Oracle');
+    expect(ddl).toContain('CREATE TABLE "users"');
+    expect(ddl).toContain('"id" NUMBER(10)'); // serial → NUMBER(10)
+    expect(ddl).toContain('"email" VARCHAR2(255) NOT NULL UNIQUE');
+    expect(ddl).toContain('PRIMARY KEY ("id")');
+    expect(ddl).toContain('COMMENT ON TABLE "users" IS \'Users\';');
+    expect(ddl).not.toContain('IDENTITY');
+    expect(ddl).not.toContain('AUTO_INCREMENT');
+  });
+});
+
+describe('DDL SQLServer', () => {
+  it('uses bracket quoting and IDENTITY, no COMMENT ON', () => {
+    const d = buildShop();
+    addColumn(d.contents.find((n) => n.kind === 'table' && n.physicalName === 'users')! as never, 'active', 'boolean');
+    const ddl = generateDdl(d, 'SQLServer');
+    expect(ddl).toContain('CREATE TABLE [users]');
+    expect(ddl).toContain('[id] INT IDENTITY(1,1)');
+    expect(ddl).toContain('[active] BIT');
+    expect(ddl).toContain('PRIMARY KEY ([id])');
+    expect(ddl).toContain('FOREIGN KEY ([user_id]) REFERENCES [users] ([id])');
+    expect(ddl).not.toContain('COMMENT ON');
+  });
+});
+
+describe('DDL SQLite', () => {
+  it('maps serial to INTEGER, no sequences or comments', () => {
+    const ddl = generateDdl(buildShop(), 'SQLite');
+    expect(ddl).toContain('CREATE TABLE "users"');
+    expect(ddl).toContain('"id" INTEGER');
+    expect(ddl).toContain('PRIMARY KEY ("id")');
+    expect(ddl).not.toContain('CREATE SEQUENCE');
+    expect(ddl).not.toContain('COMMENT ON');
+    expect(ddl).not.toContain('IDENTITY');
+  });
+});
+
 describe('dialect from settings', () => {
   it('uses the diagram database setting', () => {
     const d = buildShop();
@@ -84,5 +123,11 @@ describe('dialect from settings', () => {
     expect(generateDdl(d)).toContain('CREATE TABLE `users`');
     d.settings.database = 'PostgreSQL';
     expect(generateDdl(d)).toContain('CREATE TABLE "users"');
+    d.settings.database = 'Oracle';
+    expect(generateDdl(d)).toContain('VARCHAR2');
+    d.settings.database = 'SQLServer';
+    expect(generateDdl(d)).toContain('CREATE TABLE [users]');
+    d.settings.database = 'SQLite';
+    expect(generateDdl(d)).toContain('"id" INTEGER');
   });
 });

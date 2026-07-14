@@ -2,17 +2,25 @@ import { ErmDiagram, ErmTable, expandedColumns, isTable } from './erm/model';
 import { columnName, formatType } from './erm/ops';
 import { str } from './erm/xml';
 
-export type Dialect = 'PostgreSQL' | 'MySQL' | 'StandardSQL';
+export type Dialect = 'PostgreSQL' | 'MySQL' | 'Oracle' | 'SQLServer' | 'SQLite' | 'StandardSQL';
 
 export function dialectOf(diagram: ErmDiagram): Dialect {
   const db = diagram.settings.database;
-  if (db === 'MySQL') {
-    return 'MySQL';
+  switch (db) {
+    case 'MySQL':
+      return 'MySQL';
+    case 'PostgreSQL':
+      return 'PostgreSQL';
+    case 'Oracle':
+      return 'Oracle';
+    case 'SQLServer':
+    case 'SQLServer 2008':
+      return 'SQLServer';
+    case 'SQLite':
+      return 'SQLite';
+    default:
+      return 'StandardSQL';
   }
-  if (db === 'PostgreSQL') {
-    return 'PostgreSQL';
-  }
-  return 'StandardSQL';
 }
 
 interface DialectRules {
@@ -52,6 +60,97 @@ const RULES: Record<Dialect, DialectRules> = {
     inlineAutoIncrement: ' AUTO_INCREMENT',
     supportsCommentOn: false,
     inlineComment: true,
+    supportsSequences: false,
+  },
+  Oracle: {
+    quote: (n) => '"' + n.replace(/"/g, '""') + '"',
+    mapType: (t) => {
+      const m = /^([a-z_ ]+)(\(.*\))?$/i.exec(t);
+      const base = (m?.[1] ?? t).trim().toLowerCase();
+      const args = m?.[2] ?? '';
+      const map: Record<string, string> = {
+        varchar: `VARCHAR2${args || '(255)'}`,
+        'varchar(max)': 'CLOB',
+        text: 'CLOB',
+        clob: 'CLOB',
+        int: 'NUMBER(10)',
+        integer: 'NUMBER(10)',
+        serial: 'NUMBER(10)',
+        smallint: 'NUMBER(5)',
+        bigint: 'NUMBER(19)',
+        bigserial: 'NUMBER(19)',
+        boolean: 'NUMBER(1)',
+        'double precision': 'BINARY_DOUBLE',
+        double: 'BINARY_DOUBLE',
+        real: 'BINARY_FLOAT',
+        float: 'BINARY_FLOAT',
+        bytea: 'BLOB',
+        blob: 'BLOB',
+        uuid: 'RAW(16)',
+        timestamptz: 'TIMESTAMP WITH TIME ZONE',
+        datetime: 'TIMESTAMP',
+      };
+      return map[t] ?? map[base] ?? t.toUpperCase();
+    },
+    inlineAutoIncrement: '', // Oracle uses sequences (+ triggers) for auto-increment
+    supportsCommentOn: true,
+    inlineComment: false,
+    supportsSequences: true,
+  },
+  SQLServer: {
+    quote: (n) => '[' + n.replace(/]/g, ']]') + ']',
+    mapType: (t) => {
+      const m = /^([a-z_ ]+)(\(.*\))?$/i.exec(t);
+      const base = (m?.[1] ?? t).trim().toLowerCase();
+      const args = m?.[2] ?? '';
+      const map: Record<string, string> = {
+        serial: 'INT',
+        bigserial: 'BIGINT',
+        integer: 'INT',
+        boolean: 'BIT',
+        text: 'VARCHAR(MAX)',
+        clob: 'VARCHAR(MAX)',
+        'varchar(max)': 'VARCHAR(MAX)',
+        bytea: 'VARBINARY(MAX)',
+        blob: 'VARBINARY(MAX)',
+        uuid: 'UNIQUEIDENTIFIER',
+        timestamp: 'DATETIME2',
+        timestamptz: 'DATETIMEOFFSET',
+        'double precision': 'FLOAT',
+        double: 'FLOAT',
+      };
+      if (map[t]) return map[t];
+      if (map[base]) return map[base] + (base === 'varchar' ? args : '');
+      return t;
+    },
+    inlineAutoIncrement: ' IDENTITY(1,1)',
+    supportsCommentOn: false, // uses sp_addextendedproperty; skipped
+    inlineComment: false,
+    supportsSequences: false,
+  },
+  SQLite: {
+    quote: (n) => '"' + n.replace(/"/g, '""') + '"',
+    mapType: (t) => {
+      const base = (/^([a-z_ ]+)/i.exec(t)?.[1] ?? t).trim().toLowerCase();
+      const map: Record<string, string> = {
+        serial: 'INTEGER',
+        bigserial: 'INTEGER',
+        int: 'INTEGER',
+        bigint: 'INTEGER',
+        smallint: 'INTEGER',
+        boolean: 'INTEGER',
+        'double precision': 'REAL',
+        double: 'REAL',
+        float: 'REAL',
+        bytea: 'BLOB',
+        uuid: 'TEXT',
+        timestamptz: 'TEXT',
+      };
+      return map[t] ?? map[base] ?? t;
+    },
+    inlineAutoIncrement: '', // INTEGER PRIMARY KEY is implicitly a rowid alias
+    supportsCommentOn: false,
+    inlineComment: false,
     supportsSequences: false,
   },
   StandardSQL: {
@@ -198,9 +297,13 @@ function createTable(table: ErmTable, dialect: Dialect): string {
     if (col.defaultValue) {
       line += ` DEFAULT ${col.defaultValue}`;
     }
-    if (dialect === 'MySQL' && (autoInc || (col.referencedColumns.length === 0 && (col.word?.type === 'serial' || col.word?.type === 'bigserial')))) {
+    const isAuto =
+      autoInc ||
+      (col.referencedColumns.length === 0 && (col.word?.type === 'serial' || col.word?.type === 'bigserial'));
+    if (isAuto && r.inlineAutoIncrement) {
       line += r.inlineAutoIncrement;
-      if (col.primaryKey !== 'true') {
+      // MySQL requires an AUTO_INCREMENT column to be a key
+      if (dialect === 'MySQL' && col.primaryKey !== 'true') {
         line += ' UNIQUE';
       }
     }
