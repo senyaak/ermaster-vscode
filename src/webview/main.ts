@@ -26,6 +26,8 @@ const palette = document.getElementById('palette')!;
 const contextMenu = document.getElementById('context-menu')!;
 const databaseSelect = document.getElementById('sel-database') as HTMLSelectElement;
 const viewModeSelect = document.getElementById('sel-view-mode') as HTMLSelectElement;
+const notationSelect = document.getElementById('sel-notation') as HTMLSelectElement;
+const bezierButton = document.getElementById('btn-bezier') as HTMLButtonElement;
 
 // ---------------------------------------------------------------- redraw wiring
 
@@ -49,6 +51,8 @@ function syncToolbar(): void {
   }
   databaseSelect.value = app.doc.settings.database;
   viewModeSelect.value = app.doc.settings.viewMode || '1';
+  notationSelect.value = app.doc.settings.notation === 'IDEF1X' ? 'IDEF1X' : 'IE';
+  bezierButton.classList.toggle('active', app.doc.settings.useBezierCurve === 'true');
 }
 
 // ---------------------------------------------------------------- messaging
@@ -128,6 +132,22 @@ databaseSelect.addEventListener('change', () => {
     return;
   }
   app.doc.settings.database = databaseSelect.value;
+  commit();
+});
+
+notationSelect.addEventListener('change', () => {
+  if (!app.doc) {
+    return;
+  }
+  app.doc.settings.notation = notationSelect.value;
+  commit();
+});
+
+bezierButton.addEventListener('click', () => {
+  if (!app.doc) {
+    return;
+  }
+  app.doc.settings.useBezierCurve = app.doc.settings.useBezierCurve === 'true' ? 'false' : 'true';
   commit();
 });
 

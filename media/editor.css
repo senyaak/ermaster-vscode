@@ -32,6 +32,12 @@ html, body {
   background: var(--vscode-button-hoverBackground);
 }
 
+#toolbar button.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
 #toolbar select,
 #sel-database {
   background: var(--vscode-dropdown-background);
@@ -246,6 +252,10 @@ g.node.image.selected .tbl-hit {
 
 .rel-end circle {
   fill: var(--vscode-editor-background);
+}
+
+.rel-end.idef1x-dot {
+  fill: var(--vscode-editorLineNumber-foreground, #888);
 }
 
 /* note ↔ table comment links */

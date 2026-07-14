@@ -326,10 +326,8 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
     { x: T.x, y: T.y, bpIndex: -1 },
   ];
 
-  let d = `M ${round(verts[0].x)} ${round(verts[0].y)}`;
-  for (let i = 1; i < verts.length; i++) {
-    d += ` L ${round(verts[i].x)} ${round(verts[i].y)}`;
-  }
+  const bezier = app.doc?.settings.useBezierCurve === 'true';
+  const d = bezier ? smoothPath(verts) : straightPath(verts);
 
   // decorations are oriented along each end's segment
   const beforeT = verts[verts.length - 2];
@@ -338,26 +336,38 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
   const dS = norm(S.x - afterS.x, S.y - afterS.y); // points into the parent table
   const pT = { x: -dT.y, y: dT.x };
   const pS = { x: -dS.y, y: dS.x };
-
-  // child (many) end: crow's foot, or a single bar for a 1:1 child cardinality
-  const many = rel.childCardinality !== '1';
-  const crowLen = 11;
-  const half = 6;
-  const apex = { x: T.x - dT.x * crowLen, y: T.y - dT.y * crowLen };
-  const crow = many
-    ? `M ${round(apex.x + pT.x * half)} ${round(apex.y + pT.y * half)} L ${round(T.x)} ${round(T.y)} ` +
-      `M ${round(apex.x)} ${round(apex.y)} L ${round(T.x)} ${round(T.y)} ` +
-      `M ${round(apex.x - pT.x * half)} ${round(apex.y - pT.y * half)} L ${round(T.x)} ${round(T.y)}`
-    : tick({ x: T.x - dT.x * 5, y: T.y - dT.y * 5 }, pT, half);
-
-  // parent (one) end: a single bar, plus a circle for an optional (0..1) parent
   const optional = rel.parentCardinality === '0..1';
-  const barGap = 8;
-  const barC = { x: S.x - dS.x * barGap, y: S.y - dS.y * barGap };
-  const bar = `<path class="rel-end" d="${tick(barC, pS, half)}"/>`;
-  const circle = optional
-    ? `<circle class="rel-end" cx="${round(S.x - dS.x * (barGap + 5))}" cy="${round(S.y - dS.y * (barGap + 5))}" r="4"/>`
-    : '';
+  const half = 6;
+
+  let endMarks: string;
+  if (app.doc?.settings.notation === 'IDEF1X') {
+    // IDEF1X: a filled dot at the child (dependent) end; open circle for an
+    // optional parent. No crow's foot.
+    const dot = { x: T.x - dT.x * 7, y: T.y - dT.y * 7 };
+    endMarks = `<circle class="rel-end idef1x-dot" cx="${round(dot.x)}" cy="${round(dot.y)}" r="6"/>`;
+    if (optional) {
+      const oc = { x: S.x - dS.x * 6, y: S.y - dS.y * 6 };
+      endMarks += `<circle class="rel-end" cx="${round(oc.x)}" cy="${round(oc.y)}" r="5"/>`;
+    }
+  } else {
+    // IE crow's foot at the child (many) side, or a single bar for 1:1
+    const many = rel.childCardinality !== '1';
+    const crowLen = 11;
+    const apex = { x: T.x - dT.x * crowLen, y: T.y - dT.y * crowLen };
+    const crow = many
+      ? `M ${round(apex.x + pT.x * half)} ${round(apex.y + pT.y * half)} L ${round(T.x)} ${round(T.y)} ` +
+        `M ${round(apex.x)} ${round(apex.y)} L ${round(T.x)} ${round(T.y)} ` +
+        `M ${round(apex.x - pT.x * half)} ${round(apex.y - pT.y * half)} L ${round(T.x)} ${round(T.y)}`
+      : tick({ x: T.x - dT.x * 5, y: T.y - dT.y * 5 }, pT, half);
+    // parent (one) side: a single bar, plus a circle for an optional (0..1) parent
+    const barGap = 8;
+    const barC = { x: S.x - dS.x * barGap, y: S.y - dS.y * barGap };
+    const bar = `<path class="rel-end" d="${tick(barC, pS, half)}"/>`;
+    const circle = optional
+      ? `<circle class="rel-end" cx="${round(S.x - dS.x * (barGap + 5))}" cy="${round(S.y - dS.y * (barGap + 5))}" r="4"/>`
+      : '';
+    endMarks = `<path class="rel-end" d="${crow}"/>` + bar + circle;
+  }
 
   const selected = app.selectedRelation === rel;
   // handles are drawn inside the zoom group, so counter-scale to keep them
@@ -384,12 +394,39 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
     `<g class="relation${selected ? ' selected' : ''}">` +
     `<path class="rel-hit" data-rel="${index}" d="${d}"/>` +
     `<path class="rel-line${identifying ? '' : ' non-identifying'}" d="${d}"/>` +
-    `<path class="rel-end" d="${crow}"/>` +
-    bar +
-    circle +
+    endMarks +
     handles +
     `</g>`
   );
+}
+
+/** A straight polyline through the vertices. */
+function straightPath(verts: { x: number; y: number }[]): string {
+  let d = `M ${round(verts[0].x)} ${round(verts[0].y)}`;
+  for (let i = 1; i < verts.length; i++) {
+    d += ` L ${round(verts[i].x)} ${round(verts[i].y)}`;
+  }
+  return d;
+}
+
+/** A smooth Catmull-Rom curve through the vertices (for the bezier setting). */
+function smoothPath(verts: { x: number; y: number }[]): string {
+  if (verts.length < 3) {
+    return straightPath(verts);
+  }
+  let d = `M ${round(verts[0].x)} ${round(verts[0].y)}`;
+  for (let i = 0; i < verts.length - 1; i++) {
+    const p0 = verts[i === 0 ? 0 : i - 1];
+    const p1 = verts[i];
+    const p2 = verts[i + 1];
+    const p3 = verts[i + 2] ?? p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${round(c1x)} ${round(c1y)} ${round(c2x)} ${round(c2y)} ${round(p2.x)} ${round(p2.y)}`;
+  }
+  return d;
 }
 
 /** A note↔table comment link: a dashed line between the two boxes' edges. */
@@ -444,6 +481,7 @@ const EXPORT_CSS = `
   .rel-line.non-identifying { stroke-dasharray: 6 4; }
   .rel-end { fill: none; stroke: #555; stroke-width: 1.5; }
   .rel-end circle { fill: #fff; }
+  .rel-end.idef1x-dot { fill: #555; }
   .note-body { fill: #ffffce; stroke: #bbbb88; }
   .note-fold { fill: #e8e8a0; stroke: #bbbb88; }
   .note-text { fill: #333; font-size: 12px; font-family: sans-serif; }

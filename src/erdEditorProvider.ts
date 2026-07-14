@@ -140,6 +140,11 @@ export class ErdEditorProvider implements vscode.CustomTextEditorProvider {
       <option value="2">Both</option>
     </select>
     <select id="sel-database" title="Database dialect"></select>
+    <select id="sel-notation" title="Relation notation">
+      <option value="IE">IE</option>
+      <option value="IDEF1X">IDEF1X</option>
+    </select>
+    <button id="btn-bezier" title="Toggle bezier-curved relations">Curve</button>
     <span class="toolbar-spacer"></span>
     <button id="btn-categories" title="Categories (visual groups)">Groups</button>
     <button id="btn-ddl" title="Generate DDL">DDL</button>

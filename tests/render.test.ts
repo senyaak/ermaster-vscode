@@ -92,4 +92,26 @@ describe('relation routing (chopbox anchors)', () => {
     expect(sx).toBeGreaterThan(0);
     expect(tx).toBeGreaterThanOrEqual(400);
   });
+
+  it('IDEF1X notation draws a filled dot instead of a crow foot', () => {
+    const d = emptyDiagram();
+    const parent = addTable(d, 0, 0);
+    const child = addTable(d, 400, 0);
+    createRelationAutoFk(parent, child);
+    d.settings.notation = 'IDEF1X';
+    app.doc = d;
+    expect(sceneMarkup('physical')).toContain('idef1x-dot');
+  });
+
+  it('bezier setting emits a curved (C) path', () => {
+    const d = emptyDiagram();
+    const parent = addTable(d, 0, 0);
+    const child = addTable(d, 400, 200);
+    const rel = createRelationAutoFk(parent, child)!;
+    rel.bendpoints.push({ relative: 'false', x: '200', y: '50' });
+    d.settings.useBezierCurve = 'true';
+    app.doc = d;
+    const svg = sceneMarkup('physical');
+    expect(/class="rel-line[^"]*" d="M [\d.-]+ [\d.-]+ C /.test(svg)).toBe(true);
+  });
 });

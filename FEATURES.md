@@ -31,10 +31,10 @@ Source: `org.insightech.er` (SVN r128, SourceForge). Status: ✅ done, 🚧 part
 | Composite FK | ✅ | Relation tool copies the whole PK; tests |
 | Categories (visual grouping) | ✅ | Groups button: name, color, member tables; canvas frame; tests |
 | Column groups (`column_groups`) | ✅ | Groups tab in the table dialog: create, edit columns, attach to tables; tests |
-| comment_connection (note↔table) | 🚧 | format only; no UI to create |
-| Images on canvas (`image`) | 🚧 | format only; not rendered |
+| comment_connection (note↔table) | ✅ | Link palette tool; dashed chopbox-routed line; tests |
+| Images on canvas (`image`) | ✅ | rendered (base64 data-URI); Image tool + file picker; hue/sat/brightness/opacity editable; tests |
 | Bendpoint editing | ✅ | click a relation to select, drag handles, click segment to add, double-click to remove; tests |
-| Bezier relations, IDEF1X notation | 🚧 | saved; we draw IE crow's foot |
+| Bezier relations, IDEF1X notation | ✅ | toolbar Curve toggle + IE/IDEF1X selector; tests |
 
 ## Databases
 
@@ -43,7 +43,8 @@ Source: `org.insightech.er` (SVN r128, SourceForge). Status: ✅ done, 🚧 part
 | Dialect selector (10 ERMaster DBs) | ✅ | toolbar dropdown, written to settings.database |
 | DDL: PostgreSQL | ✅ | tables, PK, FK, UNIQUE, indexes, comments, sequences, views, triggers; tests |
 | DDL: MySQL | ✅ | backticks, AUTO_INCREMENT, type mapping, inline COMMENT; tests |
-| DDL: other dialects | 🚧 | StandardSQL fallback (ANSI quoting) |
+| DDL: Oracle / SQL Server / SQLite | ✅ | type mapping, IDENTITY/sequences, bracket quoting; tests |
+| DDL: other dialects (DB2/H2/Firebird…) | 🚧 | StandardSQL fallback (ANSI quoting) |
 | Full per-DB type mapping (SqlType.xls) | 🚧 | curated list + parameterized types |
 | Tablespaces | 🚧 | raw passthrough |
 
