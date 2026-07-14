@@ -168,6 +168,22 @@ g.node.rel-source .tbl-body {
   stroke-width: 2;
 }
 
+g.node.note.selected .note-body {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+
+g.node.image.selected .tbl-hit {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+
+.img-placeholder {
+  fill: rgba(128, 128, 128, 0.12);
+  stroke: var(--vscode-panel-border, #888);
+  stroke-dasharray: 4 3;
+}
+
 .tbl-name {
   fill: #ffffff;
   font-size: 12px;
@@ -230,6 +246,14 @@ g.node.rel-source .tbl-body {
 
 .rel-end circle {
   fill: var(--vscode-editor-background);
+}
+
+/* note ↔ table comment links */
+.comment-line {
+  fill: none;
+  stroke: var(--vscode-descriptionForeground, #aa8);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
 }
 
 /* wide transparent path to make the thin relation line easy to click */

@@ -1,4 +1,4 @@
-import { ErmColumn, ErmColumnGroup, ErmNode, ErmNote, ErmTable, ErmView, expandedColumns } from '../erm/model';
+import { ErmColumn, ErmColumnGroup, ErmImage, ErmNode, ErmNote, ErmTable, ErmView, expandedColumns } from '../erm/model';
 import {
   addCategory,
   addColumn,
@@ -36,6 +36,11 @@ import { app, commit } from './state';
 import { esc } from './geometry';
 
 const root = document.getElementById('dialog-root')!;
+
+function clampInt(value: string, min: number, max: number): string {
+  const n = parseInt(value, 10);
+  return String(isNaN(n) ? min : Math.max(min, Math.min(max, n)));
+}
 
 interface DialogState {
   node?: ErmNode;
@@ -128,7 +133,7 @@ function renderDialog(): void {
     body = noteBody(node);
   } else {
     title = 'Image';
-    body = '<div class="hint-row">Images can only be edited in ERMaster.</div>';
+    body = imageBody(node);
   }
 
   root.innerHTML = `
@@ -450,6 +455,34 @@ function viewBody(v: ErmView): string {
     </div>`;
 }
 
+function imageBody(img: ErmImage): string {
+  const mime = img.data.startsWith('/9j/')
+    ? 'image/jpeg'
+    : img.data.startsWith('R0lGOD')
+      ? 'image/gif'
+      : img.data.startsWith('Qk')
+        ? 'image/bmp'
+        : img.data.startsWith('PHN2Zy') || img.data.startsWith('PD94bWw')
+          ? 'image/svg+xml'
+          : 'image/png';
+  const preview = img.data
+    ? `<img src="data:${mime};base64,${img.data}" style="max-width:100%;max-height:160px;display:block;margin-bottom:10px;border:1px solid var(--vscode-panel-border,#3c3c3c)">`
+    : '';
+  const slider = (field: string, label: string, min: number, max: number, value: string) =>
+    `<div class="field row"><label>${label}</label>
+      <input type="range" data-field="${field}" min="${min}" max="${max}" value="${esc(value)}">
+      <input type="number" data-field="${field}" min="${min}" max="${max}" value="${esc(value)}" style="width:64px">
+    </div>`;
+  return `
+    ${preview}
+    ${slider('img-hue', 'Hue', 0, 360, img.hue)}
+    ${slider('img-saturation', 'Saturation', -100, 100, img.saturation)}
+    ${slider('img-brightness', 'Brightness', -100, 100, img.brightness)}
+    ${slider('img-alpha', 'Opacity', 0, 255, img.alpha)}
+    <div class="field row"><label>Keep aspect ratio</label>
+      <input type="checkbox" data-field="img-aspect"${img.fixAspectRatio === 'true' ? ' checked' : ''}></div>`;
+}
+
 function noteBody(n: ErmNote): string {
   return `
     <div class="field"><label>Text</label><textarea rows="8" data-field="note-text">${esc(n.text)}</textarea></div>
@@ -689,6 +722,15 @@ function handleChange(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaEle
     } else if (field === 'v-sql') {
       node.sql = (el as HTMLTextAreaElement).value;
     }
+    commit();
+    return;
+  }
+  if (node.kind === 'image') {
+    if (field === 'img-hue') node.hue = clampInt(el.value, 0, 360);
+    else if (field === 'img-saturation') node.saturation = clampInt(el.value, -100, 100);
+    else if (field === 'img-brightness') node.brightness = clampInt(el.value, -100, 100);
+    else if (field === 'img-alpha') node.alpha = clampInt(el.value, 0, 255);
+    else if (field === 'img-aspect') node.fixAspectRatio = (el as HTMLInputElement).checked ? 'true' : 'false';
     commit();
     return;
   }

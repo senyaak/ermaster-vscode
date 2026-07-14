@@ -1,9 +1,11 @@
 import { ErmNode, ErmRelation } from '../erm/model';
 import {
   addBendpoint,
+  addImage,
   addNote,
   addTable,
   allRelations,
+  createCommentConnection,
   createRelationAutoFk,
   deleteNode,
   moveBendpoint,
@@ -94,7 +96,11 @@ function setTool(tool: Tool): void {
         ? 'Click to create a table'
         : tool === 'note'
           ? 'Click to create a note'
-          : '',
+          : tool === 'image'
+            ? 'Click where the image should go, then choose a file'
+            : tool === 'comment'
+              ? 'Click a note, then a table (or the other way round)'
+              : '',
   );
   renderDiagram();
 }
@@ -158,6 +164,47 @@ function exportPng(): void {
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
 }
 
+// ---------------------------------------------------------------- image insert
+
+function pickImage(x: number, y: number): void {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = () => {
+    const file = input.files?.[0];
+    if (!file || !app.doc) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result);
+      const base64 = dataUrl.split(',')[1] ?? '';
+      // read the natural size so the node starts at 1:1, capped to a sane box
+      const probe = new Image();
+      probe.onload = () => {
+        if (!app.doc) {
+          return;
+        }
+        const scale = Math.min(1, 400 / Math.max(1, probe.width), 400 / Math.max(1, probe.height));
+        const node = addImage(app.doc, x, y, base64, probe.width * scale, probe.height * scale);
+        app.selectedIndex = app.doc.contents.indexOf(node);
+        commit();
+      };
+      probe.onerror = () => {
+        if (!app.doc) {
+          return;
+        }
+        const node = addImage(app.doc, x, y, base64, 160, 120);
+        app.selectedIndex = app.doc.contents.indexOf(node);
+        commit();
+      };
+      probe.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
 // ---------------------------------------------------------------- pointer
 
 interface DragState {
@@ -202,8 +249,18 @@ svg.addEventListener('pointerdown', (e) => {
     commit();
     return;
   }
+  if (app.tool === 'image') {
+    const p = toDiagram(e.clientX, e.clientY);
+    pickImage(p.x, p.y);
+    setTool('select');
+    return;
+  }
   if (app.tool === 'relation') {
     handleRelationClick(index);
+    return;
+  }
+  if (app.tool === 'comment') {
+    handleCommentClick(index);
     return;
   }
 
@@ -359,6 +416,35 @@ function handleRelationClick(index: number): void {
     const rel = createRelationAutoFk(parent, node);
     if (!rel) {
       showHint('The parent table has no primary key');
+    }
+  }
+  setTool('select');
+  commit();
+}
+
+function handleCommentClick(index: number): void {
+  if (!app.doc || index < 0) {
+    if (index < 0) {
+      setTool('select'); // clicking empty space cancels
+    }
+    return;
+  }
+  const node = app.doc.contents[index];
+  if (app.relationSource < 0) {
+    app.relationSource = index;
+    showHint(
+      node.kind === 'note'
+        ? 'Now click the table to link this note to'
+        : 'Now click the note to link this table to',
+    );
+    renderDiagram();
+    return;
+  }
+  const first = app.doc.contents[app.relationSource];
+  if (first && first !== node) {
+    const conn = createCommentConnection(first, node);
+    if (!conn) {
+      showHint('A comment link must connect a note with a table');
     }
   }
   setTool('select');

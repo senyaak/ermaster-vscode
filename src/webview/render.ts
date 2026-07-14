@@ -1,4 +1,4 @@
-import { ErmCategory, ErmNode, ErmNote, ErmRelation, ErmTable, ErmView, expandedColumns } from '../erm/model';
+import { ErmCategory, ErmCommentConnection, ErmImage, ErmNode, ErmNote, ErmRelation, ErmTable, ErmView, expandedColumns } from '../erm/model';
 import { columnDisplayName, formatType, tableDisplayName, viewModeOf, ViewMode } from '../erm/ops';
 import { app } from './state';
 import {
@@ -34,12 +34,26 @@ export function sceneMarkup(mode: ViewMode): string {
   for (const cat of app.doc.settings.categories) {
     parts.push(categorySvg(cat, mode));
   }
+  // inserted images sit at the back (behind notes and tables)
+  app.doc.contents.forEach((node, i) => {
+    if (node.kind === 'image') {
+      parts.push(imageSvg(node, i));
+    }
+  });
   // notes sit behind tables (like ERMaster)
   app.doc.contents.forEach((node, i) => {
     if (node.kind === 'note') {
       parts.push(noteSvg(node, i));
     }
   });
+  // comment links (note ↔ table) sit under the relations
+  for (const node of app.doc.contents) {
+    for (const conn of node.base.incomings) {
+      if (conn.kind === 'comment') {
+        parts.push(commentSvg(conn, mode));
+      }
+    }
+  }
   // relations: index matches ops.allRelations() so the webview can map a
   // clicked line back to its relation
   let relIndex = 0;
@@ -131,6 +145,43 @@ function boxSvg(t: ErmTable | ErmView, index: number, mode: ViewMode): string {
     sep +
     rows.join('') +
     `<rect class="tbl-hit" x="0" y="0" width="${w}" height="${h}" rx="3"/>` +
+    `</g>`
+  );
+}
+
+/** Guess the image MIME type from the leading base64 bytes. */
+function imageMime(base64: string): string {
+  if (base64.startsWith('/9j/')) return 'image/jpeg';
+  if (base64.startsWith('R0lGOD')) return 'image/gif';
+  if (base64.startsWith('Qk')) return 'image/bmp';
+  if (base64.startsWith('PHN2Zy') || base64.startsWith('PD94bWw')) return 'image/svg+xml';
+  return 'image/png';
+}
+
+function imageSvg(img: ErmImage, index: number): string {
+  const w = nodeWidth(img, 'physical');
+  const h = nodeHeight(img);
+  const cls = 'node image' + (index === app.selectedIndex ? ' selected' : '');
+  // ERMaster image adjustments → CSS filter (hue 0..360, sat/bright -100..100, alpha 0..255)
+  const hue = parseInt(img.hue, 10) || 0;
+  const sat = parseInt(img.saturation, 10) || 0;
+  const bright = parseInt(img.brightness, 10) || 0;
+  const alpha = isNaN(parseInt(img.alpha, 10)) ? 255 : parseInt(img.alpha, 10);
+  const filters: string[] = [];
+  if (hue) filters.push(`hue-rotate(${hue}deg)`);
+  if (sat) filters.push(`saturate(${Math.max(0, 1 + sat / 100)})`);
+  if (bright) filters.push(`brightness(${Math.max(0, 1 + bright / 100)})`);
+  const style =
+    `opacity:${(alpha / 255).toFixed(3)}` + (filters.length ? `;filter:${filters.join(' ')}` : '');
+  const href = img.data ? `data:${imageMime(img.data)};base64,${img.data}` : '';
+  return (
+    `<g class="${cls}" data-index="${index}" transform="translate(${nodeX(img)} ${nodeY(img)})">` +
+    (href
+      ? `<image href="${href}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="${
+          img.fixAspectRatio === 'true' ? 'xMidYMid meet' : 'none'
+        }" style="${style}"/>`
+      : `<rect class="img-placeholder" x="0" y="0" width="${w}" height="${h}"/>`) +
+    `<rect class="tbl-hit" x="0" y="0" width="${w}" height="${h}"/>` +
     `</g>`
   );
 }
@@ -341,6 +392,39 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
   );
 }
 
+/** A note↔table comment link: a dashed line between the two boxes' edges. */
+function commentSvg(conn: ErmCommentConnection, mode: ViewMode): string {
+  const a = conn.source;
+  const b = conn.target;
+  if (!a || !b) {
+    return '';
+  }
+  const boxA = anchorBox(a, mode);
+  const boxB = anchorBox(b, mode);
+  if (!boxA || !boxB) {
+    return '';
+  }
+  const bps = conn.bendpoints
+    .map((bp) => ({ x: parseInt(bp.x, 10), y: parseInt(bp.y, 10), relative: bp.relative }))
+    .filter((p) => !isNaN(p.x) && !isNaN(p.y) && p.relative !== 'true');
+  const pa = customAnchor(boxA, conn.sourceXp, conn.sourceYp) ?? chopbox(boxA, bps[0] ?? centerOf(boxB));
+  const pb = customAnchor(boxB, conn.targetXp, conn.targetYp) ?? chopbox(boxB, bps[bps.length - 1] ?? centerOf(boxA));
+  let d = `M ${round(pa.x)} ${round(pa.y)}`;
+  for (const p of bps) {
+    d += ` L ${round(p.x)} ${round(p.y)}`;
+  }
+  d += ` L ${round(pb.x)} ${round(pb.y)}`;
+  return `<g class="comment"><path class="comment-line" d="${d}"/></g>`;
+}
+
+/** Bounding box of any node (tables/views/notes/images) for anchoring links. */
+function anchorBox(node: ErmNode | null, mode: ViewMode): Box | null {
+  if (!node) {
+    return null;
+  }
+  return { x: nodeX(node), y: nodeY(node), w: nodeWidth(node, mode), h: nodeHeight(node) };
+}
+
 // ------------------------------------------------------------ export
 
 const EXPORT_CSS = `
@@ -363,6 +447,8 @@ const EXPORT_CSS = `
   .note-body { fill: #ffffce; stroke: #bbbb88; }
   .note-fold { fill: #e8e8a0; stroke: #bbbb88; }
   .note-text { fill: #333; font-size: 12px; font-family: sans-serif; }
+  .img-placeholder { fill: #eee; stroke: #bbb; stroke-dasharray: 4 3; }
+  .comment-line { fill: none; stroke: #aa8; stroke-width: 1; stroke-dasharray: 2 3; }
 `;
 
 export function buildExportSvg(): string | null {
@@ -375,9 +461,6 @@ export function buildExportSvg(): string | null {
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const n of app.doc.contents) {
-    if (n.kind === 'image') {
-      continue;
-    }
     const w = nodeWidth(n, mode);
     const h = nodeHeight(n);
     minX = Math.min(minX, nodeX(n));

@@ -153,6 +153,8 @@ export class ErdEditorProvider implements vscode.CustomTextEditorProvider {
       <button class="tool-btn" data-tool="table" title="New table"><span class="tool-ico">▦</span><span class="tool-lbl">Table</span></button>
       <button class="tool-btn" data-tool="note" title="New note"><span class="tool-ico">\u{1F5D2}</span><span class="tool-lbl">Note</span></button>
       <button class="tool-btn" data-tool="relation" title="1:n relation — click parent then child"><span class="tool-ico">⎁</span><span class="tool-lbl">Relation</span></button>
+      <button class="tool-btn" data-tool="image" title="Insert image"><span class="tool-ico">\u{1F5BC}</span><span class="tool-lbl">Image</span></button>
+      <button class="tool-btn" data-tool="comment" title="Link a note to a table"><span class="tool-ico">\u{1F4CE}</span><span class="tool-lbl">Link</span></button>
     </div>
     <div id="canvas-wrap">
       <svg id="canvas"></svg>

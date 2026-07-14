@@ -8,12 +8,15 @@ import {
   addColumnGroup,
   addColumnToGroup,
   addComplexUniqueKey,
+  addImage,
   addIndex,
   addNote,
   addTable,
   addViewColumn,
+  allCommentConnections,
   allRelations,
   columnName,
+  createCommentConnection,
   createRelation,
   createRelationAutoFk,
   deleteColumn,
@@ -249,6 +252,69 @@ describe('column groups', () => {
     expect(reloaded.columnGroups.map((g) => g.groupName)).toEqual(['audit']);
     const rt = reloaded.contents.find(isTable)!;
     expect(expandedColumns(rt).map(columnName)).toEqual(['created_at']);
+  });
+});
+
+describe('comment connections', () => {
+  it('links a note to a table and rejects table-to-table', () => {
+    const d = emptyDiagram();
+    const t = addTable(d, 0, 0);
+    const note = addNote(d, 200, 0, 'hi');
+    const conn = createCommentConnection(note, t);
+    expect(conn).toBeTruthy();
+    expect(conn!.source).toBe(note);
+    expect(conn!.target).toBe(t);
+    expect(t.base.incomings).toContain(conn);
+    expect(allCommentConnections(d)).toEqual([conn]);
+    // two tables cannot be comment-linked
+    const t2 = addTable(d, 400, 0);
+    expect(createCommentConnection(t, t2)).toBeNull();
+  });
+
+  it('deleting a linked node removes the comment connection', () => {
+    const d = emptyDiagram();
+    const t = addTable(d, 0, 0);
+    const note = addNote(d, 200, 0, 'hi');
+    createCommentConnection(note, t);
+    deleteNode(d, note);
+    expect(allCommentConnections(d)).toHaveLength(0);
+  });
+
+  it('comment connections survive a round-trip', () => {
+    const d = emptyDiagram();
+    const t = addTable(d, 0, 0);
+    t.physicalName = 'orders';
+    const note = addNote(d, 200, 0, 'note');
+    createCommentConnection(note, t);
+    const reloaded = loadErm(writeErm(d));
+    const conns = allCommentConnections(reloaded);
+    expect(conns).toHaveLength(1);
+    expect(conns[0].source?.kind).toBe('note');
+    expect(conns[0].target?.kind).toBe('table');
+  });
+});
+
+describe('images', () => {
+  const PNG1x1 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('addImage stores base64 data and size', () => {
+    const d = emptyDiagram();
+    const img = addImage(d, 10, 20, PNG1x1, 120, 80);
+    expect(img.kind).toBe('image');
+    expect(img.data).toBe(PNG1x1);
+    expect(img.base.width).toBe('120');
+    expect(img.base.height).toBe('80');
+    expect(d.contents).toContain(img);
+  });
+
+  it('images survive a round-trip', () => {
+    const d = emptyDiagram();
+    addImage(d, 10, 20, PNG1x1, 120, 80);
+    const reloaded = loadErm(writeErm(d));
+    const rimg = reloaded.contents.find((n) => n.kind === 'image');
+    expect(rimg).toBeTruthy();
+    expect(rimg && rimg.kind === 'image' && rimg.data).toBe(PNG1x1);
   });
 });
 

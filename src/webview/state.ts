@@ -6,7 +6,7 @@ declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 
 const vscode = acquireVsCodeApi();
 
-export type Tool = 'select' | 'table' | 'note' | 'relation';
+export type Tool = 'select' | 'table' | 'note' | 'relation' | 'image' | 'comment';
 
 export interface AppState {
   doc: ErmDiagram | null;

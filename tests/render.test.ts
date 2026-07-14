@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { app } from '../src/webview/state';
 import { sceneMarkup } from '../src/webview/render';
-import { addCategory, addColumn, addNote, addTable, createRelationAutoFk, emptyDiagram, toggleCategoryNode } from '../src/erm/ops';
+import { addCategory, addColumn, addImage, addNote, addTable, createRelationAutoFk, emptyDiagram, toggleCategoryNode } from '../src/erm/ops';
 
 describe('scene paint order (z-index)', () => {
   it('renders notes before tables so tables paint on top', () => {
@@ -47,6 +47,24 @@ describe('scene paint order (z-index)', () => {
     expect(catAt).toBeGreaterThanOrEqual(0);
     expect(catAt).toBeLessThan(svg.indexOf('note-body'));
     expect(catAt).toBeLessThan(svg.indexOf('tbl-body'));
+  });
+});
+
+describe('images', () => {
+  const PNG1x1 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('renders an inserted image as a data-URI behind tables', () => {
+    const d = emptyDiagram();
+    addImage(d, 0, 0, PNG1x1, 100, 100);
+    const t = addTable(d, 200, 0);
+    t.physicalName = 'users';
+    app.doc = d;
+
+    const svg = sceneMarkup('physical');
+    expect(svg).toContain(`data:image/png;base64,${PNG1x1}`);
+    // image paints before the table
+    expect(svg.indexOf('<image')).toBeLessThan(svg.indexOf('tbl-body'));
   });
 });
 

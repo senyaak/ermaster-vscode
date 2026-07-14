@@ -2,8 +2,10 @@ import {
   ErmCategory,
   ErmColumn,
   ErmColumnGroup,
+  ErmCommentConnection,
   ErmComplexUniqueKey,
   ErmDiagram,
+  ErmImage,
   ErmIndex,
   ErmNode,
   ErmNote,
@@ -116,7 +118,7 @@ export function deleteNode(diagram: ErmDiagram, node: ErmNode): void {
   // connections targeting the node die with it; connections *from* it live
   // in other nodes' incomings and must be removed (FK columns released)
   for (const other of diagram.contents) {
-    if (other === node || (other.kind !== 'table' && other.kind !== 'view')) {
+    if (other === node) {
       continue;
     }
     for (const conn of [...other.base.incomings]) {
@@ -154,6 +156,38 @@ export function addNote(diagram: ErmDiagram, x: number, y: number, text = ''): E
   };
   diagram.contents.push(note);
   return note;
+}
+
+/** Insert a base64-encoded image (raw bytes, like ERMaster's InsertedImage). */
+export function addImage(
+  diagram: ErmDiagram,
+  x: number,
+  y: number,
+  base64: string,
+  width: number,
+  height: number,
+): ErmImage {
+  const image: ErmImage = {
+    kind: 'image',
+    base: {
+      height: String(Math.max(1, Math.round(height))),
+      width: String(Math.max(1, Math.round(width))),
+      fontName: '',
+      fontSize: '9',
+      x: String(Math.round(x)),
+      y: String(Math.round(y)),
+      color: null,
+      incomings: [],
+    },
+    data: base64,
+    hue: '0',
+    saturation: '0',
+    brightness: '0',
+    alpha: '255',
+    fixAspectRatio: 'true',
+  };
+  diagram.contents.push(image);
+  return image;
 }
 
 // ------------------------------------------------------------ indexes
@@ -620,6 +654,55 @@ function findOwner(diagram: ErmDiagram, column: ErmColumn): ErmTable | null {
 /** The relation shown for a column in the editor (first FK relation). */
 export function columnRelation(column: ErmColumn): ErmRelation | null {
   return column.relations[0] ?? null;
+}
+
+// ------------------------------------------------------------ comment connections
+
+/**
+ * Link a note to a table/view (ERMaster's comment_connection). One endpoint
+ * must be a note. The connection is stored in the target's incomings, like
+ * ERMaster serializes it. Returns null if neither endpoint is a note.
+ */
+export function createCommentConnection(
+  source: ErmNode,
+  target: ErmNode,
+): ErmCommentConnection | null {
+  if (source === target || (source.kind !== 'note' && target.kind !== 'note')) {
+    return null;
+  }
+  const conn: ErmCommentConnection = {
+    kind: 'comment',
+    source,
+    target,
+    sourceXp: '-1',
+    sourceYp: '-1',
+    targetXp: '-1',
+    targetYp: '-1',
+    bendpoints: [],
+    color: null,
+  };
+  target.base.incomings.push(conn);
+  return conn;
+}
+
+/** All comment connections in the diagram, in a stable (contents) order. */
+export function allCommentConnections(diagram: ErmDiagram): ErmCommentConnection[] {
+  const out: ErmCommentConnection[] = [];
+  for (const node of diagram.contents) {
+    for (const conn of node.base.incomings) {
+      if (conn.kind === 'comment') {
+        out.push(conn);
+      }
+    }
+  }
+  return out;
+}
+
+/** Remove a comment connection from wherever it is stored. */
+export function removeCommentConnection(diagram: ErmDiagram, conn: ErmCommentConnection): void {
+  for (const node of diagram.contents) {
+    node.base.incomings = node.base.incomings.filter((c) => c !== conn);
+  }
 }
 
 // ------------------------------------------------------------ bendpoints
