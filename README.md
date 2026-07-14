@@ -46,7 +46,7 @@ npm test
 Press `F5` to launch the Extension Host, then open `examples/shop.erm`.
 
 Build and install locally:
-`npx @vscode/vsce package && code --install-extension erm-vsc-0.0.1.vsix`
+`npx @vscode/vsce package && code --install-extension erm-vsc-0.1.0.vsix`
 
 ## Structure
 

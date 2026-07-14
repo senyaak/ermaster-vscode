@@ -2,7 +2,7 @@
   "name": "erm-vsc",
   "displayName": "erm-vsc",
   "description": "ER diagram editor with DDL generation — a modern ERMaster replacement",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "senyaak",
   "engines": {
     "vscode": "^1.85.0"
