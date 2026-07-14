@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { app } from '../src/webview/state';
 import { sceneMarkup } from '../src/webview/render';
-import { addCategory, addNote, addTable, emptyDiagram, toggleCategoryNode } from '../src/erm/ops';
+import { addCategory, addColumn, addNote, addTable, createRelationAutoFk, emptyDiagram, toggleCategoryNode } from '../src/erm/ops';
 
 describe('scene paint order (z-index)', () => {
   it('renders notes before tables so tables paint on top', () => {
@@ -47,5 +47,31 @@ describe('scene paint order (z-index)', () => {
     expect(catAt).toBeGreaterThanOrEqual(0);
     expect(catAt).toBeLessThan(svg.indexOf('note-body'));
     expect(catAt).toBeLessThan(svg.indexOf('tbl-body'));
+  });
+});
+
+describe('relation routing (chopbox anchors)', () => {
+  it('draws a straight horizontal line between vertically-aligned tables', () => {
+    const d = emptyDiagram();
+    const parent = addTable(d, 0, 0);
+    parent.physicalName = 'parent';
+    const child = addTable(d, 400, 0);
+    child.physicalName = 'child';
+    createRelationAutoFk(parent, child);
+    // the child gains the FK column, so add one to the parent to keep heights equal
+    addColumn(parent, 'name', 'varchar(255)');
+    app.doc = d;
+
+    const svg = sceneMarkup('physical');
+    const m = /class="rel-line[^"]*" d="M ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+)"/.exec(svg);
+    expect(m).toBeTruthy();
+    const [sx, sy, tx, ty] = m!.slice(1).map(Number);
+    // endpoints on the facing edges: parent (left) exits its right side toward child
+    expect(sx).toBeLessThan(tx);
+    // both tables share a baseline, so the connection is horizontal
+    expect(sy).toBe(ty);
+    // and the source anchor sits on the parent's right edge (x > 0, well left of child)
+    expect(sx).toBeGreaterThan(0);
+    expect(tx).toBeGreaterThanOrEqual(400);
   });
 });

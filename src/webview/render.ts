@@ -5,7 +5,6 @@ import {
   boxHeight,
   boxWidth,
   categoryBounds,
-  columnRowY,
   esc,
   HEADER_H,
   nodeHeight,
@@ -185,10 +184,60 @@ function categorySvg(cat: ErmCategory, mode: ViewMode): string {
   );
 }
 
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function boxOf(node: ErmTable | ErmView, mode: ViewMode): Box {
+  return { x: nodeX(node), y: nodeY(node), w: nodeWidth(node, mode), h: nodeHeight(node) };
+}
+
+function centerOf(b: Box): { x: number; y: number } {
+  return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+}
+
+/** GEF ChopboxAnchor: the point on a box's edge along the center→reference line. */
+function chopbox(b: Box, ref: { x: number; y: number }): { x: number; y: number } {
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  const dx = ref.x - cx;
+  const dy = ref.y - cy;
+  if ((dx === 0 && dy === 0) || b.w === 0 || b.h === 0) {
+    return { x: cx, y: cy };
+  }
+  const scale = 0.5 / Math.max(Math.abs(dx) / b.w, Math.abs(dy) / b.h);
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+/** A manually-placed endpoint: xp/yp are percentages of the box, or -1 when unset. */
+function customAnchor(b: Box, xp: string, yp: string): { x: number; y: number } | null {
+  const x = parseInt(xp, 10);
+  const y = parseInt(yp, 10);
+  if (isNaN(x) || isNaN(y) || x < 0 || y < 0) {
+    return null;
+  }
+  return { x: b.x + (b.w * x) / 100, y: b.y + (b.h * y) / 100 };
+}
+
+function norm(dx: number, dy: number): { x: number; y: number } {
+  const len = Math.hypot(dx, dy);
+  return len < 1e-6 ? { x: 1, y: 0 } : { x: dx / len, y: dy / len };
+}
+
+const round = (n: number): number => Math.round(n);
+
+/** A short perpendicular tick centered at `c`, along direction `p`, of half-length `h`. */
+function tick(c: { x: number; y: number }, p: { x: number; y: number }, h: number): string {
+  return `M ${round(c.x + p.x * h)} ${round(c.y + p.y * h)} L ${round(c.x - p.x * h)} ${round(c.y - p.y * h)}`;
+}
+
 /**
- * Relation in IE (crow's foot) notation. Endpoints are clamped to the facing
- * edges of the two boxes; existing bendpoints are drawn as an orthogonal path.
- * Identifying relations (FK is part of the child PK) are solid, others dashed.
+ * Relation in IE (crow's foot) notation, routed the way ERMaster does: straight
+ * segments between two ChopboxAnchors (or saved xp/yp endpoints) through the
+ * bendpoints. Identifying relations (FK is part of the child PK) are solid.
  */
 function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode, index: number): string {
   const parent = rel.source;
@@ -196,61 +245,67 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
     return '';
   }
   const fkColumn = expandedColumns(child).find((c) => c.relations.includes(rel)) ?? null;
-  const parentCols = expandedColumns(parent);
-  const parentColumn =
-    rel.referencedColumn ??
-    fkColumn?.referencedColumns.find((c) => parentCols.includes(c)) ??
-    parentCols.find((c) => c.primaryKey === 'true') ??
-    null;
-
-  const cw = nodeWidth(child, mode);
-  const pw = nodeWidth(parent, mode);
-  const cy = fkColumn ? columnRowY(child, fkColumn) : nodeY(child) + nodeHeight(child) / 2;
-  const py = parentColumn ? columnRowY(parent, parentColumn) : nodeY(parent) + boxHeight(parent) / 2;
-
-  const childCenter = nodeX(child) + cw / 2;
-  const parentCenter = nodeX(parent) + pw / 2;
-  const childDir = parentCenter >= childCenter ? 1 : -1;
-  const parentDir = -childDir;
-  const cx = childDir === 1 ? nodeX(child) + cw : nodeX(child);
-  const px = parentDir === 1 ? nodeX(parent) + pw : nodeX(parent);
-
   const identifying = fkColumn?.primaryKey === 'true' || rel.referenceForPk === 'true';
-  const crowLen = 12;
-  const startX = cx + childDir * crowLen;
-  const barGap = 9;
-  const barX = px + parentDir * barGap;
 
-  // polyline vertices: crow base → bendpoints → parent bar. Bendpoint handles
-  // and segment "add" handles are drawn from these when the relation is selected.
-  // bpIndex maps a vertex back to its rel.bendpoints slot (-1 for endpoints).
-  const verts: { x: number; y: number; bpIndex: number }[] = [{ x: startX, y: cy, bpIndex: -1 }];
-  rel.bendpoints.forEach((bp, i) => {
-    const bx = parseInt(bp.x, 10);
-    const by = parseInt(bp.y, 10);
-    if (!isNaN(bx) && !isNaN(by) && bp.relative !== 'true') {
-      verts.push({ x: bx, y: by, bpIndex: i });
-    }
-  });
-  verts.push({ x: barX, y: py, bpIndex: -1 });
+  // ERMaster routing: straight segments between two ChopboxAnchors. Each endpoint
+  // is where the line to the other end crosses the table's edge (or a saved
+  // xp/yp percentage point if the user dragged the endpoint). source = parent
+  // (the "one" side), target = child (the crow's-foot "many" side).
+  const parentBox = boxOf(parent, mode);
+  const childBox = boxOf(child, mode);
 
-  // path body: from crow base, through bendpoints (if any), to the parent bar
-  let d = `M ${verts[0].x} ${verts[0].y}`;
+  const bps = rel.bendpoints
+    .map((bp, i) => ({ x: parseInt(bp.x, 10), y: parseInt(bp.y, 10), bpIndex: i, relative: bp.relative }))
+    .filter((p) => !isNaN(p.x) && !isNaN(p.y) && p.relative !== 'true');
+
+  const parentCustom = customAnchor(parentBox, rel.sourceXp, rel.sourceYp);
+  const childCustom = customAnchor(childBox, rel.targetXp, rel.targetYp);
+  const parentRef = parentCustom ?? centerOf(parentBox);
+  const childRef = childCustom ?? centerOf(childBox);
+
+  // GEF: source anchor aims at the first bendpoint (else the target's reference);
+  // target anchor aims at the last bendpoint (else the source's reference).
+  const S = parentCustom ?? chopbox(parentBox, bps[0] ?? childRef);
+  const T = childCustom ?? chopbox(childBox, bps[bps.length - 1] ?? parentRef);
+
+  // polyline vertices S → bendpoints → T (bpIndex is -1 for the two endpoints)
+  const verts: { x: number; y: number; bpIndex: number }[] = [
+    { x: S.x, y: S.y, bpIndex: -1 },
+    ...bps.map((p) => ({ x: p.x, y: p.y, bpIndex: p.bpIndex })),
+    { x: T.x, y: T.y, bpIndex: -1 },
+  ];
+
+  let d = `M ${round(verts[0].x)} ${round(verts[0].y)}`;
   for (let i = 1; i < verts.length; i++) {
-    d += ` L ${verts[i].x} ${verts[i].y}`;
+    d += ` L ${round(verts[i].x)} ${round(verts[i].y)}`;
   }
-  d += ` L ${px} ${py}`;
 
-  // crow's foot at the child (many) side
+  // decorations are oriented along each end's segment
+  const beforeT = verts[verts.length - 2];
+  const afterS = verts[1];
+  const dT = norm(T.x - beforeT.x, T.y - beforeT.y); // points into the child table
+  const dS = norm(S.x - afterS.x, S.y - afterS.y); // points into the parent table
+  const pT = { x: -dT.y, y: dT.x };
+  const pS = { x: -dS.y, y: dS.x };
+
+  // child (many) end: crow's foot, or a single bar for a 1:1 child cardinality
   const many = rel.childCardinality !== '1';
+  const crowLen = 11;
+  const half = 6;
+  const apex = { x: T.x - dT.x * crowLen, y: T.y - dT.y * crowLen };
   const crow = many
-    ? `M ${startX} ${cy - 6} L ${cx} ${cy} M ${startX} ${cy} L ${cx} ${cy} M ${startX} ${cy + 6} L ${cx} ${cy}`
-    : `M ${cx} ${cy - 6} L ${cx} ${cy + 6}`;
-  // parent (one) side: a single bar; optional circle for 0..1
+    ? `M ${round(apex.x + pT.x * half)} ${round(apex.y + pT.y * half)} L ${round(T.x)} ${round(T.y)} ` +
+      `M ${round(apex.x)} ${round(apex.y)} L ${round(T.x)} ${round(T.y)} ` +
+      `M ${round(apex.x - pT.x * half)} ${round(apex.y - pT.y * half)} L ${round(T.x)} ${round(T.y)}`
+    : tick({ x: T.x - dT.x * 5, y: T.y - dT.y * 5 }, pT, half);
+
+  // parent (one) end: a single bar, plus a circle for an optional (0..1) parent
   const optional = rel.parentCardinality === '0..1';
-  const bar = `<path class="rel-end" d="M ${barX} ${py - 6} L ${barX} ${py + 6}"/>`;
+  const barGap = 8;
+  const barC = { x: S.x - dS.x * barGap, y: S.y - dS.y * barGap };
+  const bar = `<path class="rel-end" d="${tick(barC, pS, half)}"/>`;
   const circle = optional
-    ? `<circle class="rel-end" cx="${px + parentDir * (barGap + 5)}" cy="${py}" r="4"/>`
+    ? `<circle class="rel-end" cx="${round(S.x - dS.x * (barGap + 5))}" cy="${round(S.y - dS.y * (barGap + 5))}" r="4"/>`
     : '';
 
   const selected = app.selectedRelation === rel;
@@ -265,11 +320,12 @@ function relationSvg(rel: ErmRelation, child: ErmTable | ErmView, mode: ViewMode
         handles += `<circle class="bp-handle" data-rel="${index}" data-bp="${v.bpIndex}" cx="${v.x}" cy="${v.y}" r="${r}"/>`;
       }
     }
-    // segment midpoints: click to insert a new bendpoint (insertion index = segment index)
+    // segment midpoints: click to insert a new bendpoint before the next vertex
     for (let i = 0; i < verts.length - 1; i++) {
       const mx = (verts[i].x + verts[i + 1].x) / 2;
       const my = (verts[i].y + verts[i + 1].y) / 2;
-      handles += `<circle class="bp-add" data-rel="${index}" data-addbp="${i}" cx="${mx}" cy="${my}" r="${r * 0.8}"/>`;
+      const insertAt = verts[i + 1].bpIndex >= 0 ? verts[i + 1].bpIndex : rel.bendpoints.length;
+      handles += `<circle class="bp-add" data-rel="${index}" data-addbp="${insertAt}" cx="${round(mx)}" cy="${round(my)}" r="${r * 0.8}"/>`;
     }
   }
 
