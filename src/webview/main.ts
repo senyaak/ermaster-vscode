@@ -153,6 +153,7 @@ bezierButton.addEventListener('click', () => {
 
 document.getElementById('btn-categories')!.addEventListener('click', () => openCategoriesDialog());
 document.getElementById('btn-ddl')!.addEventListener('click', () => post({ type: 'generateDdl' }));
+document.getElementById('btn-testdata')!.addEventListener('click', () => post({ type: 'generateTestData' }));
 document.getElementById('btn-export-svg')!.addEventListener('click', exportSvg);
 document.getElementById('btn-export-png')!.addEventListener('click', exportPng);
 

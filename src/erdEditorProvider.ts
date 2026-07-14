@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { generateDdl } from './ddl';
 import { loadErm } from './erm/load';
+import { generateTestData } from './erm/testData';
 import { validateDiagram } from './erm/validate';
 
 export class ErdEditorProvider implements vscode.CustomTextEditorProvider {
@@ -57,6 +58,9 @@ export class ErdEditorProvider implements vscode.CustomTextEditorProvider {
           break;
         case 'generateDdl':
           openDdlForText(document.getText());
+          break;
+        case 'generateTestData':
+          openTestDataForText(document.getText());
           break;
         case 'exportSvg':
           saveExport(document, 'svg', Buffer.from(msg.svg, 'utf8'));
@@ -148,6 +152,7 @@ export class ErdEditorProvider implements vscode.CustomTextEditorProvider {
     <span class="toolbar-spacer"></span>
     <button id="btn-categories" title="Categories (visual groups)">Groups</button>
     <button id="btn-ddl" title="Generate DDL">DDL</button>
+    <button id="btn-testdata" title="Generate test-data INSERTs">Data</button>
     <button id="btn-export-svg" title="Export SVG">SVG</button>
     <button id="btn-export-png" title="Export PNG">PNG</button>
     <span id="parse-error"></span>
@@ -172,6 +177,23 @@ export class ErdEditorProvider implements vscode.CustomTextEditorProvider {
 </body>
 </html>`;
   }
+}
+
+export function openTestDataForText(text: string): void {
+  let sql: string;
+  try {
+    sql = generateTestData(loadErm(text));
+  } catch (e) {
+    vscode.window.showErrorMessage(`erm-vsc: cannot parse diagram — ${String(e)}`);
+    return;
+  }
+  if (!sql.trim()) {
+    vscode.window.showInformationMessage('erm-vsc: this diagram has no test data to generate.');
+    return;
+  }
+  vscode.workspace.openTextDocument({ language: 'sql', content: sql }).then((doc) => {
+    vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
+  });
 }
 
 export function openDdlForText(text: string): void {

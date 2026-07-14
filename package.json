@@ -53,6 +53,10 @@
         "title": "ERD: Generate DDL"
       },
       {
+        "command": "erm-vsc.generateTestData",
+        "title": "ERD: Generate Test Data (INSERTs)"
+      },
+      {
         "command": "erm-vsc.importDdl",
         "title": "ERD: Import DDL (.sql) as Diagram"
       }
@@ -61,6 +65,11 @@
       "explorer/context": [
         {
           "command": "erm-vsc.generateDdl",
+          "when": "resourceExtname == .erm",
+          "group": "erm-vsc"
+        },
+        {
+          "command": "erm-vsc.generateTestData",
           "when": "resourceExtname == .erm",
           "group": "erm-vsc"
         },

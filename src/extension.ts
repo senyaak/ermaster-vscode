@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ErdEditorProvider, openDdlForText } from './erdEditorProvider';
+import { ErdEditorProvider, openDdlForText, openTestDataForText } from './erdEditorProvider';
 import { importDdl } from './erm/importDdl';
 import { emptyDiagram } from './erm/ops';
 import { writeErm } from './erm/write';
@@ -10,8 +10,28 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('erm-vsc.newDiagram', newDiagram),
     vscode.commands.registerCommand('erm-vsc.generateDdl', generateDdlCommand),
+    vscode.commands.registerCommand('erm-vsc.generateTestData', generateTestDataCommand),
     vscode.commands.registerCommand('erm-vsc.importDdl', importDdlCommand),
   );
+}
+
+async function generateTestDataCommand(uri?: vscode.Uri): Promise<void> {
+  let target = uri;
+  if (!target && vscode.window.activeTextEditor?.document.fileName.endsWith('.erm')) {
+    target = vscode.window.activeTextEditor.document.uri;
+  }
+  if (!target) {
+    const picked = await vscode.window.showOpenDialog({
+      filters: { 'ERMaster Diagram': ['erm'] },
+      canSelectMany: false,
+    });
+    target = picked?.[0];
+  }
+  if (!target) {
+    return;
+  }
+  const doc = await vscode.workspace.openTextDocument(target);
+  openTestDataForText(doc.getText());
 }
 
 async function importDdlCommand(uri?: vscode.Uri): Promise<void> {
