@@ -5,11 +5,16 @@ import {
   addColumnGroup,
   addColumnToGroup,
   addComplexUniqueKey,
+  addDirectRow,
   addIndex,
   addViewColumn,
   deleteCategory,
   deleteColumnGroup,
+  deleteDirectRow,
   deleteViewColumn,
+  ensureTableTestData,
+  ensureTestData,
+  setDirectCell,
   removeColumnFromGroup,
   tableHasGroup,
   toggleTableGroup,
@@ -123,6 +128,7 @@ function renderDialog(): void {
       ['indexes', 'Indexes'],
       ['unique', 'Unique Keys'],
       ['relations', 'Relations'],
+      ['testdata', 'Test Data'],
     ]);
     body = tableTabBody(node);
   } else if (node.kind === 'view') {
@@ -202,9 +208,37 @@ function tableTabBody(t: ErmTable): string {
       return uniqueGrid(t);
     case 'relations':
       return relationsGrid(t);
+    case 'testdata':
+      return testDataGrid(t);
     default:
       return attrsBody(t);
   }
+}
+
+/** Direct test-data rows for this table (columns × rows editable grid). */
+function testDataGrid(t: ErmTable): string {
+  const cols = expandedColumns(t);
+  const set = app.doc?.testDataList[0];
+  const td = set?.tables.find((x) => x.table === t);
+  const rows = (td?.directRows ?? [])
+    .map((row, ri) => {
+      const cells = cols
+        .map((c, ci) => {
+          const value = row.find((cell) => cell.column === c)?.value ?? '';
+          return `<td><input type="text" data-field="td-cell" data-td-row="${ri}" data-td-col="${ci}" value="${esc(value)}"></td>`;
+        })
+        .join('');
+      return `<tr data-td-row="${ri}">${cells}<td class="center"><button class="icon-btn" data-action="td-del-row" title="Delete row">✕</button></td></tr>`;
+    })
+    .join('');
+  const head = cols.map((c) => `<th>${esc(columnName(c))}</th>`).join('');
+  return `
+    <div class="grid-toolbar"><button data-action="td-add-row">+ Row</button></div>
+    <table class="grid">
+      <thead><tr>${head}<th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="${cols.length + 1}" class="hint-row">No test data rows. Values are emitted as quoted strings; use <code>null</code> for NULL.</td></tr>`}</tbody>
+    </table>
+    <div class="hint-row">Generate INSERTs with the <strong>Data</strong> toolbar button.</div>`;
 }
 
 const TYPE_DATALIST = `<datalist id="type-list">${KNOWN_TYPE_IDS.map(
@@ -596,6 +630,21 @@ function handleAction(btn: HTMLButtonElement): void {
     commit();
     return;
   }
+  if (action === 'td-add-row') {
+    const td = ensureTableTestData(ensureTestData(app.doc), t);
+    addDirectRow(t, td);
+    commit();
+    return;
+  }
+  if (action === 'td-del-row') {
+    const tr = btn.closest('tr') as HTMLElement | null;
+    const td = app.doc.testDataList[0]?.tables.find((x) => x.table === t);
+    if (td && tr) {
+      deleteDirectRow(td, parseInt(tr.dataset.tdRow ?? '-1', 10));
+      commit();
+    }
+    return;
+  }
 
   // column groups (diagram-wide)
   if (action === 'add-group') {
@@ -799,6 +848,17 @@ function handleChange(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaEle
   }
 
   const columns = expandedColumns(t);
+
+  // test-data direct cell
+  if (field === 'td-cell' && el.dataset.tdRow !== undefined && el.dataset.tdCol !== undefined) {
+    const td = app.doc.testDataList[0]?.tables.find((x) => x.table === t);
+    const col = columns[parseInt(el.dataset.tdCol, 10)];
+    if (td && col) {
+      setDirectCell(td, parseInt(el.dataset.tdRow, 10), col, (el as HTMLInputElement).value);
+      commit();
+    }
+    return;
+  }
 
   // index
   const tr = el.closest('tr') as HTMLElement | null;

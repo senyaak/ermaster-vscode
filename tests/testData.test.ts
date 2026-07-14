@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { ErmColumn, ErmTestData, expandedColumns } from '../src/erm/model';
-import { addColumn, addTable, emptyDiagram } from '../src/erm/ops';
+import {
+  addColumn,
+  addDirectRow,
+  addTable,
+  emptyDiagram,
+  ensureTableTestData,
+  ensureTestData,
+  setDirectCell,
+} from '../src/erm/ops';
 import { generateTestData } from '../src/erm/testData';
+import { loadErm } from '../src/erm/load';
+import { writeErm } from '../src/erm/write';
 
 function directRow(pairs: [ErmColumn, string][]) {
   return pairs.map(([column, value]) => ({ column, value }));
@@ -122,5 +132,24 @@ describe('test data → SQL', () => {
     const d = emptyDiagram();
     addTable(d, 0, 0);
     expect(generateTestData(d)).toBe('');
+  });
+
+  it('authoring ops build rows that generate and round-trip', () => {
+    const d = emptyDiagram();
+    const t = addTable(d, 0, 0);
+    t.physicalName = 'users';
+    const id = expandedColumns(t)[0];
+    const email = addColumn(t, 'email', 'varchar(255)');
+
+    const td = ensureTableTestData(ensureTestData(d), t);
+    addDirectRow(t, td);
+    setDirectCell(td, 0, id, '1');
+    setDirectCell(td, 0, email, 'a@x.com');
+
+    expect(generateTestData(d)).toContain("INSERT INTO users (id, email) VALUES ('1', 'a@x.com');");
+
+    // survives a save/load and still generates the same INSERT
+    const reloaded = loadErm(writeErm(d));
+    expect(generateTestData(reloaded)).toContain("INSERT INTO users (id, email) VALUES ('1', 'a@x.com');");
   });
 });

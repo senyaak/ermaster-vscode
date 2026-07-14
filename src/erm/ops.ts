@@ -11,6 +11,8 @@ import {
   ErmNote,
   ErmRelation,
   ErmTable,
+  ErmTableTestData,
+  ErmTestData,
   ErmView,
   ErmWord,
   expandedColumns,
@@ -654,6 +656,66 @@ function findOwner(diagram: ErmDiagram, column: ErmColumn): ErmTable | null {
 /** The relation shown for a column in the editor (first FK relation). */
 export function columnRelation(column: ErmColumn): ErmRelation | null {
   return column.relations[0] ?? null;
+}
+
+// ------------------------------------------------------------ test data
+
+/** The first test-data set, creating a default one if none exists. */
+export function ensureTestData(diagram: ErmDiagram): ErmTestData {
+  if (diagram.testDataList.length === 0) {
+    diagram.testDataList.push({ name: 'TEST_DATA', exportOrder: '0', tables: [] });
+  }
+  return diagram.testDataList[0];
+}
+
+/** The per-table test data within a set, creating it if missing. */
+export function ensureTableTestData(set: ErmTestData, table: ErmTable): ErmTableTestData {
+  let td = set.tables.find((t) => t.table === table);
+  if (!td) {
+    td = { table, directRows: [], repeatTestDataNum: '0', repeatDefs: [] };
+    set.tables.push(td);
+  }
+  return td;
+}
+
+/** Append an empty direct row (one blank cell per current column). */
+export function addDirectRow(table: ErmTable, td: ErmTableTestData): void {
+  td.directRows.push(expandedColumns(table).map((c) => ({ column: c, value: '' })));
+}
+
+export function deleteDirectRow(td: ErmTableTestData, rowIndex: number): void {
+  if (rowIndex >= 0 && rowIndex < td.directRows.length) {
+    td.directRows.splice(rowIndex, 1);
+  }
+}
+
+/** Set a cell value in a direct row, adding the column cell if absent. */
+export function setDirectCell(
+  td: ErmTableTestData,
+  rowIndex: number,
+  column: ErmColumn,
+  value: string,
+): void {
+  const row = td.directRows[rowIndex];
+  if (!row) {
+    return;
+  }
+  const cell = row.find((c) => c.column === column);
+  if (cell) {
+    cell.value = value;
+  } else {
+    row.push({ column, value });
+  }
+}
+
+/** Remove empty per-table test data / empty sets so nothing dangles on save. */
+export function pruneTestData(diagram: ErmDiagram): void {
+  for (const set of diagram.testDataList) {
+    set.tables = set.tables.filter(
+      (t) => t.directRows.length > 0 || (parseInt(t.repeatTestDataNum, 10) || 0) > 0,
+    );
+  }
+  diagram.testDataList = diagram.testDataList.filter((s) => s.tables.length > 0);
 }
 
 // ------------------------------------------------------------ comment connections

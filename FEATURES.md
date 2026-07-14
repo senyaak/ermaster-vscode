@@ -59,7 +59,7 @@ Source: `org.insightech.er` (SVN r128, SourceForge). Status: ✅ done, 🚧 part
 | Import from a live DB (JDBC) | ⬜ | candidate: node-postgres; next big step |
 | Excel/HTML report export | ⬜ | low priority |
 | Java/Hibernate generation | ⬜ | questionable value |
-| Test data → SQL | ✅ | INSERTs from stored test data (direct + repeat: format/enum/foreign.key/null, modified-value overrides); `Data` button / command; tests. Authoring UI still 🚧 |
+| Test data | ✅ | Test Data tab authors direct rows per table; INSERTs from direct + repeat data (format/enum/foreign.key/null, modified-value overrides); `Data` button / command; tests. Repeat-def authoring UI still 🚧 |
 
 ## Misc
 
